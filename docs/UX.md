@@ -5,11 +5,11 @@
 Use two independently pinnable bands where the SDK permits it:
 
 ```text
-Codex   5h 58% left · 7d 32% left
-Claude  5h 79% left · 7d 26% left
+Wk 66%/3d6h
+Ses 88%/2h14m
 ```
 
-The exact typography and icon API depend on the installed Command Palette SDK. Keep text short enough for the Dock and avoid pretending that percentages are remaining when they are used percentages. If space is constrained, prefer `C 42/68` and `Cl 21/74` only after tooltip/detail support is available.
+The top line shows the weekly remaining percentage and reset countdown. The bottom line shows the session remaining percentage and reset countdown. Labels are intentionally compact because Command Palette does not expose per-band width. Keep missing provider windows as `—` rather than fabricating values.
 
 ## Expanded details
 

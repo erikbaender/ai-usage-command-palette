@@ -29,13 +29,23 @@ public sealed class ClaudeStatusLineInstaller
 
         var root = JsonNode.Parse(originalBytes)?.AsObject() ?? throw new JsonException("Claude settings must be a JSON object.");
         var existingCommand = root["statusLine"]?["command"]?.GetValue<string>();
-        if (!string.IsNullOrWhiteSpace(existingCommand) && !replaceExisting)
+        var existingBridge = IsBridgeCommand(existingCommand);
+        if (!string.IsNullOrWhiteSpace(existingCommand) && !replaceExisting && !existingBridge)
         {
             return new ClaudeInstallResult(false, false, existingCommand, "An existing status-line command was found. Re-run with explicit replacement enabled to preserve and wrap it.");
         }
 
+        var originalCommand = existingBridge
+            ? await ReadOriginalCommandFromBackupAsync(cancellationToken)
+            : existingCommand;
+        var bridgeCommand = BuildBridgeCommand(bridgeExecutablePath, originalCommand);
+        if (string.Equals(existingCommand, bridgeCommand, StringComparison.Ordinal))
+        {
+            return new ClaudeInstallResult(false, false, originalCommand, "Claude usage bridge is already installed.");
+        }
+
         var backupCreated = false;
-        if (File.Exists(SettingsPath) && !File.Exists(BackupPath))
+        if (!existingBridge && File.Exists(SettingsPath) && !File.Exists(BackupPath))
         {
             await File.WriteAllBytesAsync(BackupPath, originalBytes, cancellationToken);
             backupCreated = true;
@@ -43,13 +53,15 @@ public sealed class ClaudeStatusLineInstaller
 
         var statusLine = root["statusLine"]?.AsObject() ?? new JsonObject();
         statusLine["type"] = "command";
-        statusLine["command"] = BuildBridgeCommand(bridgeExecutablePath, existingCommand ?? string.Empty);
+        statusLine["command"] = bridgeCommand;
         root["statusLine"] = statusLine;
         await AtomicWriteAsync(SettingsPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), cancellationToken);
-        var message = string.IsNullOrWhiteSpace(existingCommand)
+        var message = existingBridge
+            ? "Claude usage status line bridge updated."
+            : string.IsNullOrWhiteSpace(existingCommand)
             ? "Claude usage status line installed. Claude Code will now show a built-in usage line."
             : "Claude status-line wrapper installed; the original command is preserved in the wrapper arguments and backup file.";
-        return new ClaudeInstallResult(true, backupCreated, existingCommand, message);
+        return new ClaudeInstallResult(true, backupCreated, originalCommand, message);
     }
 
     public async Task<bool> RestoreAsync(CancellationToken cancellationToken)
@@ -68,6 +80,28 @@ public sealed class ClaudeStatusLineInstaller
         string.IsNullOrWhiteSpace(originalCommand)
             ? QuoteArgument(bridgeExecutablePath)
             : $"{QuoteArgument(bridgeExecutablePath)} --command-line {QuoteArgument(originalCommand)}";
+
+    private static bool IsBridgeCommand(string? command) =>
+        !string.IsNullOrWhiteSpace(command) && command.Contains("AIUsageDock.Bridge.exe", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<string?> ReadOriginalCommandFromBackupAsync(CancellationToken cancellationToken)
+    {
+        if (!File.Exists(BackupPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var backupBytes = await File.ReadAllBytesAsync(BackupPath, cancellationToken);
+            var backupRoot = JsonNode.Parse(backupBytes)?.AsObject();
+            return backupRoot?["statusLine"]?["command"]?.GetValue<string>();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static string QuoteArgument(string value)
     {

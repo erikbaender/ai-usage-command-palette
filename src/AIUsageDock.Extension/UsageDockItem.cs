@@ -15,7 +15,7 @@ public sealed partial class UsageDockItem : ListItem, IDisposable
     {
         _provider = provider;
         _coordinator = coordinator;
-        Icon = new IconInfo(provider == ProviderId.Codex ? "\uE8A7" : "\uE77B");
+        Icon = IconHelpers.FromRelativePath(provider == ProviderId.Codex ? "Assets/openai.svg" : "Assets/claude.svg");
         Update(coordinator.GetSnapshot(provider));
         _coordinator.SnapshotChanged += OnSnapshotChanged;
     }
@@ -30,16 +30,9 @@ public sealed partial class UsageDockItem : ListItem, IDisposable
 
     private void Update(ProviderSnapshot snapshot)
     {
-        Title = UsageFormatting.FormatDock(snapshot, DateTimeOffset.UtcNow);
-        Subtitle = snapshot.Health switch
-        {
-            ProviderHealth.Unavailable => $"{_provider} CLI not found",
-            ProviderHealth.Unauthenticated => "Sign in through the installed CLI",
-            ProviderHealth.Stale => "Last known values · stale",
-            ProviderHealth.Error => "Refresh failed",
-            ProviderHealth.Unknown => snapshot.Message ?? "Waiting for first provider response",
-            _ => snapshot.Source,
-        };
+        var now = DateTimeOffset.UtcNow;
+        Title = UsageFormatting.FormatDockWeekly(snapshot, now);
+        Subtitle = UsageFormatting.FormatDockSession(snapshot, now);
     }
 
     public void Dispose()

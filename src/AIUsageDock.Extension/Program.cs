@@ -1,6 +1,7 @@
 using Microsoft.Windows.AppLifecycle;
 using Shmuelie.WinRTServer;
 using Shmuelie.WinRTServer.CsWinRT;
+using AIUsageDock.Providers;
 
 namespace AIUsageDock.Extension;
 
@@ -21,6 +22,7 @@ public static class Program
     {
         await using var server = new ComServer();
         using var disposed = new ManualResetEvent(false);
+        await EnsureClaudeBridgeAsync();
         await using var coordinator = UsageCoordinator.CreateDefault();
         coordinator.Start();
 
@@ -31,5 +33,23 @@ public static class Program
         disposed.WaitOne();
         server.Stop();
         server.UnsafeDispose();
+    }
+
+    private static async Task EnsureClaudeBridgeAsync()
+    {
+        var bridgePath = Path.Combine(AppContext.BaseDirectory, "Bridge", "AIUsageDock.Bridge.exe");
+        if (!File.Exists(bridgePath))
+        {
+            return;
+        }
+
+        try
+        {
+            await new ClaudeStatusLineInstaller().InstallAsync(bridgePath, replaceExisting: false, CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // Claude setup must never prevent the Command Palette extension from loading.
+        }
     }
 }

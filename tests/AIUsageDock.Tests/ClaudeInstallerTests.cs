@@ -57,4 +57,28 @@ public sealed class ClaudeInstallerTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task UpdatesAnExistingBridgeWithoutNestingIt()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-usage-dock-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var settingsPath = Path.Combine(root, "settings.json");
+        await File.WriteAllTextAsync(settingsPath, "{\"statusLine\":{\"type\":\"command\",\"command\":\"\\\"C:\\\\old\\\\AIUsageDock.Bridge.exe\\\"\"}}");
+        try
+        {
+            var installer = new ClaudeStatusLineInstaller(settingsPath);
+            var result = await installer.InstallAsync("C:\\AI Usage Dock\\AIUsageDock.Bridge.exe", false, CancellationToken.None);
+
+            Assert.True(result.Installed);
+            using var document = JsonDocument.Parse(await File.ReadAllTextAsync(settingsPath));
+            var command = document.RootElement.GetProperty("statusLine").GetProperty("command").GetString();
+            Assert.Equal("\"C:\\AI Usage Dock\\AIUsageDock.Bridge.exe\"", command);
+            Assert.DoesNotContain("--command-line", command);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

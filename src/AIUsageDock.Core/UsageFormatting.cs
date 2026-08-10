@@ -27,14 +27,28 @@ public static class UsageFormatting
             return $"{name}  error";
         }
 
-        var session = FormatRemainingCompact(snapshot.GetWindow(UsageWindow.Session));
-        var weekly = FormatRemainingCompact(snapshot.GetWindow(UsageWindow.Weekly));
+        var windows = new[]
+        {
+            FormatDockWindow("5h", snapshot.GetWindow(UsageWindow.Session), now),
+            FormatDockWindow("7d", snapshot.GetWindow(UsageWindow.Weekly), now),
+        }
+        .Where(value => value is not null)
+        .Select(value => value!)
+        .ToArray();
         var stale = snapshot.Health == ProviderHealth.Stale || snapshot.IsStale(now, FreshnessPolicy.Default.ClaudeStaleAfter) ? " · stale" : string.Empty;
-        return $"{name}  5h {session} left · 7d {weekly} left{stale}";
+        return windows.Length == 0
+            ? $"{name}  usage pending{stale}"
+            : $"{name}  {string.Join(" · ", windows)}{stale}";
     }
 
     public static string FormatClaudeStatusLine(ProviderSnapshot snapshot) =>
         $"Claude 5h {FormatRemainingCompact(snapshot.GetWindow(UsageWindow.Session))} left · 7d {FormatRemainingCompact(snapshot.GetWindow(UsageWindow.Weekly))} left";
+
+    public static string FormatDockWeekly(ProviderSnapshot snapshot, DateTimeOffset now) =>
+        FormatDockLabel("Wk", snapshot.GetWindow(UsageWindow.Weekly), now, weekly: true);
+
+    public static string FormatDockSession(ProviderSnapshot snapshot, DateTimeOffset now) =>
+        FormatDockLabel("Ses", snapshot.GetWindow(UsageWindow.Session), now, weekly: false);
 
     public static string FormatCompact(UsageWindowSnapshot? window) =>
         window?.UsedPercent is double percent && UsagePercent.IsValid(percent)
@@ -45,6 +59,66 @@ public static class UsageFormatting
         window?.RemainingPercent is double percent && UsagePercent.IsValid(percent)
             ? $"{percent.ToString("0.#", CultureInfo.InvariantCulture)}%"
             : "—";
+
+    private static string? FormatDockWindow(string label, UsageWindowSnapshot? window, DateTimeOffset now)
+    {
+        if (window is null)
+        {
+            return null;
+        }
+
+        if (window.RemainingPercent is double percent && UsagePercent.IsValid(percent))
+        {
+            return $"{label} {percent.ToString("0.#", CultureInfo.InvariantCulture)}% left";
+        }
+
+        return window.ResetsAt is not null
+            ? $"{label} {FormatResetCompact(window.ResetsAt, now)}"
+            : null;
+    }
+
+    private static string FormatResetCompact(DateTimeOffset? resetAt, DateTimeOffset now)
+    {
+        if (resetAt is null)
+        {
+            return "reset unknown";
+        }
+
+        var remaining = resetAt.Value - now;
+        if (remaining <= TimeSpan.Zero)
+        {
+            return "reset due";
+        }
+
+        if (remaining.TotalDays >= 1)
+        {
+            return $"resets {Math.Floor(remaining.TotalDays)}d {remaining.Hours}h";
+        }
+
+        return $"resets {remaining.Hours}h {remaining.Minutes}m";
+    }
+
+    private static string FormatDockLabel(string label, UsageWindowSnapshot? window, DateTimeOffset now, bool weekly)
+    {
+        var remaining = FormatRemainingCompact(window);
+        var reset = window?.ResetsAt is DateTimeOffset resetAt
+            ? FormatDockReset(resetAt, now, weekly)
+            : "—";
+        return $"{label} {remaining}/{reset}";
+    }
+
+    private static string FormatDockReset(DateTimeOffset resetAt, DateTimeOffset now, bool weekly)
+    {
+        var remaining = resetAt - now;
+        if (remaining <= TimeSpan.Zero)
+        {
+            return "0h0m";
+        }
+
+        return weekly
+            ? $"{Math.Floor(remaining.TotalDays)}d{remaining.Hours}h"
+            : $"{remaining.Hours}h{remaining.Minutes}m";
+    }
 
     public static string FormatReset(DateTimeOffset? resetAt, DateTimeOffset now)
     {
