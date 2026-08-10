@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+**/AppPackages/
+src/AIUsageDock.Extension/Certificates/*.pfx
+src/AIUsageDock.Extension/Certificates/*.cer
+src/AIUsageDock.Extension/Bridge/
+*.user
+*.suo
