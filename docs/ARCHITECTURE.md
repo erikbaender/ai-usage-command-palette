@@ -6,16 +6,9 @@ Command Palette extension
   ├─ UsageCoordinator
   │    ├─ CodexProvider ── codex app-server (stdio JSONL)
   │    │                    └─ account/rateLimits/read + update notification
-  │    └─ ClaudeProvider ── %LOCALAPPDATA%\AIUsage\claude.json
-  │                         └─ written by Claude status-line bridge
-  └─ DetailView / formatting
-
-Claude Code status line
-  └─ preserving wrapper
-       ├─ parse stdin JSON
-       ├─ atomically cache rate_limits
-       ├─ invoke configured original command with identical JSON
-       └─ forward stdout/stderr/exit behavior as safely as possible
+    │    └─ ClaudeProvider ── claude -p "/usage" (JSON)
+    │                         └─ authenticated CLI output
+    └─ DetailView / formatting
 ```
 
 ## Provider contract
@@ -67,21 +60,15 @@ Use `double?` or decimal-like validation internally; clamp only values that are 
 - Restart on process exit or protocol failure with backoff. Surface stale data while retrying, never a fabricated empty state.
 - Generate or capture the installed protocol schema during development so version drift is visible.
 
-## Claude adapter and preserving bridge
+## Claude CLI adapter
 
-Claude Code status-line input includes a `rate_limits` object with `five_hour` and `seven_day` entries, each commonly containing `used_percentage` and `resets_at`.
-
-The wrapper must:
-
-1. Read all stdin without modifying the JSON payload.
-2. Validate and extract only the known usage fields.
-3. Atomically write a cache file with restrictive per-user permissions and a schema/version marker.
-4. Execute the user's prior command using an argument-safe process API, passing the exact original JSON on stdin.
-5. Forward the prior command's stdout as the visible status line and preserve exit behavior where practical.
-6. Fail open for the user's status line: if caching fails, the original command should still run; if the original command fails, do not hide that failure.
-
-The installer must back up the original configuration, write a wrapper configuration, and provide an uninstall/restore path. Never overwrite an existing status-line command without an explicit user action.
+- Resolve `claude.exe` from `AI_USAGE_CLAUDE_PATH`, PATH, and the per-user `.local\bin` fallback.
+- Start `claude -p "/usage" --output-format json --no-session-persistence` with redirected UTF-8 stdout/stderr.
+- Parse the JSON result for session and weekly percentages plus timezone-aware reset dates.
+- Bound each request and retain the last successful snapshot as stale when a refresh fails.
+- Do not modify Claude settings, read provider credentials, scrape browser data, or install a helper executable.
+- Write bounded, sanitized diagnostics to the packaged app's user-local log when the CLI fails or returns unrecognized output.
 
 ## Refresh and freshness
 
-Codex can be actively refreshed. Claude is updated when Claude Code invokes the status line, so its detail view must show `Last updated` and source `Claude Code status line`. A configurable stale threshold should default to 15 minutes; stale Claude data remains visible with a stale indicator rather than disappearing.
+Both providers are actively refreshed. Detail views show `Last updated` and the provider source. A configurable stale threshold should default to 15 minutes; stale data remains visible with a stale indicator rather than disappearing.

@@ -64,10 +64,24 @@ public sealed class UsageFormattingTests
                 new UsageWindowSnapshot(UsageWindow.Weekly, 2, now.AddDays(3), now),
             ],
             now,
-            "claude status line");
+            "Claude CLI · claude -p /usage");
 
         Assert.Equal("99% - 14m", UsageFormatting.FormatDockWindow(snapshot, UsageWindow.Session, now));
         Assert.Equal("98% - 3d", UsageFormatting.FormatDockWindow(snapshot, UsageWindow.Weekly, now));
+    }
+
+    [Fact]
+    public void UnstartedClaudeSessionUsesTheFullSessionPeriod()
+    {
+        var now = DateTimeOffset.Parse("2026-08-10T12:00:00Z");
+        var snapshot = new ProviderSnapshot(
+            ProviderId.Claude,
+            ProviderHealth.Available,
+            [new UsageWindowSnapshot(UsageWindow.Session, 0, now.AddHours(2), now)],
+            now,
+            "Claude CLI · claude -p /usage");
+
+        Assert.Equal("100% - 5h", UsageFormatting.FormatDockWindow(snapshot, UsageWindow.Session, now));
     }
 
     [Fact]

@@ -41,15 +41,12 @@ public static class UsageFormatting
             : $"{name}  {string.Join(" · ", windows)}{stale}";
     }
 
-    public static string FormatClaudeStatusLine(ProviderSnapshot snapshot) =>
-        $"Claude 5h {FormatRemainingCompact(snapshot.GetWindow(UsageWindow.Session))} left · 7d {FormatRemainingCompact(snapshot.GetWindow(UsageWindow.Weekly))} left";
-
     public static string FormatDockWindow(ProviderSnapshot snapshot, UsageWindow window, DateTimeOffset now)
     {
         var usageWindow = snapshot.GetWindow(window);
         var remaining = FormatRemainingCompact(usageWindow);
-        var countdown = usageWindow?.ResetsAt is DateTimeOffset resetAt
-            ? FormatDockResetCountdown(resetAt, now)
+        var countdown = usageWindow is not null
+            ? FormatDockResetCountdown(snapshot, usageWindow, now)
             : string.Empty;
 
         return string.IsNullOrEmpty(countdown) ? remaining : $"{remaining} - {countdown}";
@@ -103,8 +100,20 @@ public static class UsageFormatting
         return $"resets {remaining.Hours}h {remaining.Minutes}m";
     }
 
-    private static string FormatDockResetCountdown(DateTimeOffset resetAt, DateTimeOffset now)
+    private static string FormatDockResetCountdown(ProviderSnapshot snapshot, UsageWindowSnapshot window, DateTimeOffset now)
     {
+        if (snapshot.Provider == ProviderId.Claude &&
+            window.Window == UsageWindow.Session &&
+            window.UsedPercent == 0)
+        {
+            return "5h";
+        }
+
+        if (window.ResetsAt is not DateTimeOffset resetAt)
+        {
+            return string.Empty;
+        }
+
         var remaining = resetAt - now;
         if (remaining <= TimeSpan.Zero)
         {

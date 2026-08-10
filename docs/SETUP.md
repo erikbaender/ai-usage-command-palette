@@ -7,7 +7,7 @@
 - .NET SDK 9.
 - Visual Studio's Windows App SDK/MSIX prerequisites for deployment, or the cached Windows SDK metadata package used by this repository's build.
 - An authenticated Codex CLI for Codex values.
-- Claude Code with a configured statusLine command for Claude values.
+- Claude Code installed and authenticated, with claude.exe available on PATH.
 
 The extension SDK is pinned to Microsoft.CommandPalette.Extensions 0.9.260303001, which is the SDK line used by the current Dock API in this repository.
 
@@ -47,24 +47,20 @@ The extension never reads Codex token files or asks the user for an API key.
 
 ## Claude
 
-Claude Code passes the complete status-line JSON through stdin. The bridge:
+The extension actively runs claude -p "/usage" --output-format json --no-session-persistence on each refresh. It does not modify Claude settings or install a helper executable.
 
-1. Reads and size-limits the payload.
-2. Extracts only rate_limits.five_hour and rate_limits.seven_day.
-3. Atomically writes %LOCALAPPDATA%\AIUsage\claude.json.
-4. Runs the user's original command with the exact original JSON on stdin.
-5. Forwards stdout/stderr and returns the original exit code.
+The CLI result is parsed into session and weekly windows, including the reset timezone. If a later CLI request fails, the provider retains the last successful values and marks them stale.
 
-After installing the extension, reload Command Palette and run the `Enable Claude usage` command once. The packaged bridge is copied with the extension and changes `~/.claude/settings.json` for the current user. If no status-line command exists, it installs a built-in usage line; if one already exists, it preserves and wraps that command. Run Claude Code once afterward so the local usage cache is populated.
+After installing the extension, reload Command Palette. No Claude settings changes or one-time setup command are required.
 
-The installer backs up the original settings file to settings.json.ai-usage-dock.backup. It changes only statusLine.type and statusLine.command. If an existing status line is present, --replace is required. --restore restores the backup byte-for-byte.
+Ensure the PATH visible to PowerToys contains claude.exe. Set AI_USAGE_CLAUDE_PATH to the full executable path if necessary. Diagnostics are written to the package-local AIUsage\claude-cli.log file.
 
 For arbitrary shell pipelines, keep the original command explicit through a script or powershell -NoProfile -File ...; direct executable-and-argument commands are launched without a shell.
 
 ## Troubleshooting
 
 - No Codex band values: verify codex app-server starts and the CLI is authenticated. The Dock shows a missing/authentication/error state instead of zero.
-- Claude shows waiting: run `Enable Claude usage` from Command Palette, then invoke Claude Code; rate_limits is only present for supported Claude.ai subscriber sessions after a response.
-- Claude shows stale: the cache is older than the 15-minute default threshold. Run Claude Code again; the old values remain visible to avoid a misleading empty state.
+- Claude shows unavailable: verify claude.exe is on PATH or set AI_USAGE_CLAUDE_PATH.
+- Claude shows stale: the CLI refresh failed; run claude -p "/usage" manually to verify authentication and connectivity.
 - MSIX symbol warning: missing mspdbcmf.exe only prevents generation of a symbols package; the MSIX still builds.
 - Command Palette does not show the extension: install the MSIX, reload Command Palette, and verify the Dock is enabled.

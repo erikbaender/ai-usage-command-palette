@@ -22,7 +22,7 @@ See docs/SETUP.md for build/install instructions and docs/MANUAL-VALIDATION.md f
 - src/AIUsageDock.Core — normalized model, parsing, freshness, and formatting.
 - src/AIUsageDock.Providers — Codex app-server lifecycle and active Claude CLI provider.
 - src/AIUsageDock.Extension — packaged WinRT/COM Command Palette extension and Dock UI.
-- tests/AIUsageDock.Tests — provider parsers, bridge compatibility, and usage formatting tests.
+- tests/AIUsageDock.Tests — provider parsers, CLI-process behavior, and usage formatting tests.
 
 ## Build and test
 

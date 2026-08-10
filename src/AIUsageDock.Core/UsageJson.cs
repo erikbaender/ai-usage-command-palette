@@ -7,37 +7,7 @@ namespace AIUsageDock.Core;
 
 public static class UsageJson
 {
-    public const int ClaudeCacheSchemaVersion = 1;
     public const int MaxPayloadBytes = 1_048_576;
-
-    public static ProviderSnapshot ParseClaudeStatusLine(string json, DateTimeOffset observedAt)
-    {
-        using var document = ParseBounded(json);
-        var root = document.RootElement;
-        if (root.ValueKind != JsonValueKind.Object)
-        {
-            throw new JsonException("Claude status-line payload must be an object.");
-        }
-
-        var windows = new List<UsageWindowSnapshot>();
-        if (root.TryGetProperty("rate_limits", out var limits) && limits.ValueKind == JsonValueKind.Object)
-        {
-            AddClaudeWindow(limits, "five_hour", UsageWindow.Session, observedAt, windows);
-            AddClaudeWindow(limits, "seven_day", UsageWindow.Weekly, observedAt, windows);
-        }
-
-        if (windows.Count == 0)
-        {
-            return ProviderSnapshot.Waiting(ProviderId.Claude, "Claude Code status line", "Waiting for first Claude Code response");
-        }
-
-        return new ProviderSnapshot(
-            ProviderId.Claude,
-            ProviderHealth.Available,
-            windows,
-            observedAt,
-            "Claude Code status line");
-    }
 
     public static ProviderSnapshot ParseClaudeCliUsage(string json, DateTimeOffset observedAt)
     {
@@ -88,71 +58,6 @@ public static class UsageJson
             "Claude CLI · claude -p /usage");
     }
 
-    public static ProviderSnapshot ParseClaudeCache(string json, DateTimeOffset now, TimeSpan staleAfter)
-    {
-        using var document = ParseBounded(json);
-        var root = document.RootElement;
-        if (root.ValueKind != JsonValueKind.Object ||
-            !root.TryGetProperty("schemaVersion", out var schema) ||
-            schema.ValueKind != JsonValueKind.Number ||
-            schema.GetInt32() != ClaudeCacheSchemaVersion)
-        {
-            throw new JsonException("Unsupported Claude cache schema.");
-        }
-
-        if (!root.TryGetProperty("observedAt", out var observedElement) || !TryReadTimestamp(observedElement, out var observedAt))
-        {
-            throw new JsonException("Claude cache has no valid observation time.");
-        }
-
-        var windows = new List<UsageWindowSnapshot>();
-        if (root.TryGetProperty("windows", out var windowsElement) && windowsElement.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in windowsElement.EnumerateArray())
-            {
-                if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("window", out var windowElement) || !Enum.TryParse<UsageWindow>(windowElement.GetString(), true, out var window))
-                {
-                    continue;
-                }
-
-                var used = ReadPercentage(item, "usedPercent");
-                DateTimeOffset? resetAt = item.TryGetProperty("resetsAt", out var resetElement) && TryReadTimestamp(resetElement, out var reset) ? reset : null;
-                windows.Add(new UsageWindowSnapshot(window, used, resetAt, observedAt, item.TryGetProperty("limitId", out var limitId) ? limitId.GetString() : null));
-            }
-        }
-
-        var health = windows.Count == 0 ? ProviderHealth.Unknown : now - observedAt > staleAfter ? ProviderHealth.Stale : ProviderHealth.Available;
-        var message = health == ProviderHealth.Stale ? $"Cached data is older than {staleAfter.TotalMinutes:0} minutes." : null;
-        return new ProviderSnapshot(
-            ProviderId.Claude,
-            health,
-            windows,
-            observedAt,
-            "Claude Code status line cache",
-            message,
-            root.TryGetProperty("planType", out var plan) ? plan.GetString() : null);
-    }
-
-    public static string CreateClaudeCache(ProviderSnapshot snapshot)
-    {
-        var payload = new
-        {
-            schemaVersion = ClaudeCacheSchemaVersion,
-            provider = "claude",
-            observedAt = snapshot.LastUpdated ?? DateTimeOffset.UtcNow,
-            planType = snapshot.PlanType,
-            windows = snapshot.Windows.Select(window => new
-            {
-                window = window.Window.ToString(),
-                usedPercent = window.UsedPercent,
-                resetsAt = window.ResetsAt,
-                observedAt = window.ObservedAt,
-                limitId = window.LimitId,
-            }),
-        };
-        return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = false });
-    }
-
     public static ProviderSnapshot ParseCodexRateLimits(JsonElement response, DateTimeOffset observedAt)
     {
         var limits = FindObject(response, "rateLimits") ?? response;
@@ -186,16 +91,6 @@ public static class UsageJson
         }
 
         return new ProviderSnapshot(ProviderId.Codex, ProviderHealth.Available, windows.Values.OrderBy(window => window.Window).ToArray(), observedAt, "codex app-server · account/rateLimits/read", null, planType);
-    }
-
-    private static void AddClaudeWindow(JsonElement limits, string propertyName, UsageWindow window, DateTimeOffset observedAt, ICollection<UsageWindowSnapshot> target)
-    {
-        if (!limits.TryGetProperty(propertyName, out var element) || element.ValueKind != JsonValueKind.Object)
-        {
-            return;
-        }
-
-        target.Add(new UsageWindowSnapshot(window, ReadPercentage(element, "used_percentage"), ReadTimestamp(element, "resets_at"), observedAt));
     }
 
     private static DateTimeOffset ParseClaudeCliReset(string value, DateTimeOffset observedAt)

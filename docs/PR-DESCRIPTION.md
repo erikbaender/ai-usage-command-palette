@@ -7,7 +7,7 @@ This draft PR adds the implementation context for a PowerToys Command Palette Do
 ## Scope
 
 - Codex: installed/authenticated `codex app-server`, `account/rateLimits/read`, and optional `account/rateLimits/updated` notifications.
-- Claude: installed/authenticated Claude Code status-line JSON, preserving wrapper, and local `rate_limits` cache.
+- Claude: authenticated Claude CLI polling through claude -p /usage --output-format json.
 - Shared provider contract and normalized session/weekly usage model.
 - Architecture, UX, milestones, risks, security boundary, testing strategy, and concrete acceptance criteria.
 

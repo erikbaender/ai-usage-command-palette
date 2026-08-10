@@ -19,17 +19,17 @@ Each band shows one provider/window pair. The top line is the remaining percenta
 
 ## Expanded details
 
-Show provider name, plan type when supplied, each window's used and remaining percentages, reset countdown/local time, source, and last-updated time. For Claude, explicitly label cached/stale data.
+Show provider name, plan type when supplied, each window's used and remaining percentages, reset countdown/local time, source, and last-updated time. For Claude, explicitly label CLI failures and retained stale data.
 
 ## States
 
 - Available: normal percentage and countdown.
 - No CLI: `Codex CLI not found` or `Claude Code not detected`.
 - Not authenticated: actionable setup hint, no credentials requested by the extension.
-- Waiting for data: `Waiting for first Claude Code response`.
+- Waiting for data: `Waiting for provider data`.
 - Stale: keep the last known values with a visible stale marker.
 - Error: concise message plus retry/diagnostics action; never dump process output into the Dock.
 
 ## Interaction
 
-Clicking a band opens a detail page. A refresh action may trigger a Codex read, but should not launch a Claude TUI or `/usage` scrape. Provide a settings/help action linking to the local setup documentation.
+Clicking a band opens a detail page. A refresh action triggers a Codex app-server read or a bounded claude -p /usage request. Provide a settings/help action linking to the local setup documentation.
