@@ -24,7 +24,7 @@ public sealed record UsagePollingPolicy
 
     public static UsagePollingPolicy Default { get; } = new(
         TimeSpan.FromSeconds(60),
-        TimeSpan.FromSeconds(30));
+        TimeSpan.FromSeconds(15));
 
     public TimeSpan GetInterval(bool runningSession) =>
         runningSession ? RunningSessionInterval : IdleInterval;

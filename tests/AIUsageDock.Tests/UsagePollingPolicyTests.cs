@@ -5,12 +5,12 @@ namespace AIUsageDock.Tests;
 public sealed class UsagePollingPolicyTests
 {
     [Fact]
-    public void DefaultsToOneMinuteIdleAndThirtySecondsDuringRunningSession()
+    public void DefaultsToOneMinuteIdleAndFifteenSecondsDuringRunningSession()
     {
         var policy = UsagePollingPolicy.Default;
 
         Assert.Equal(TimeSpan.FromSeconds(60), policy.GetInterval(runningSession: false));
-        Assert.Equal(TimeSpan.FromSeconds(30), policy.GetInterval(runningSession: true));
+        Assert.Equal(TimeSpan.FromSeconds(15), policy.GetInterval(runningSession: true));
     }
 
     [Fact]
