@@ -5,8 +5,8 @@
 Use two independently pinnable bands where the SDK permits it:
 
 ```text
-Codex   5h 42% · 7d 68%
-Claude  5h 21% · 7d 74%
+Codex   5h 58% left · 7d 32% left
+Claude  5h 79% left · 7d 26% left
 ```
 
 The exact typography and icon API depend on the installed Command Palette SDK. Keep text short enough for the Dock and avoid pretending that percentages are remaining when they are used percentages. If space is constrained, prefer `C 42/68` and `Cl 21/74` only after tooltip/detail support is available.

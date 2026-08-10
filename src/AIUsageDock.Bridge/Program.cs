@@ -8,13 +8,13 @@ internal static class Program
     {
         try
         {
-            if (args.Length == 0 || args.Contains("--help", StringComparer.OrdinalIgnoreCase))
+            if (args.Contains("--help", StringComparer.OrdinalIgnoreCase))
             {
                 Console.Error.WriteLine("AI Usage Dock Claude bridge");
                 Console.Error.WriteLine("  --command-line <existing-command>  Cache Claude JSON and run the existing status line");
                 Console.Error.WriteLine("  --install --bridge <path> [--replace]  Wrap ~/.claude/settings.json");
                 Console.Error.WriteLine("  --restore  Restore the backed-up Claude settings");
-                return args.Length == 0 ? 2 : 0;
+                return 0;
             }
 
             if (args.Contains("--restore", StringComparer.OrdinalIgnoreCase))
@@ -42,14 +42,9 @@ internal static class Program
             }
 
             var commandIndex = Array.FindIndex(args, item => string.Equals(item, "--command-line", StringComparison.OrdinalIgnoreCase));
-            if (commandIndex < 0 || commandIndex + 1 >= args.Length)
-            {
-                Console.Error.WriteLine("Missing --command-line <existing-command>.");
-                return 2;
-            }
-
             var bridge = new ClaudeStatusLineBridge(new ClaudeCacheStore());
-            return await bridge.RunAsync(args[commandIndex + 1], Console.In, Console.Out, Console.Error, CancellationToken.None);
+            var originalCommand = commandIndex >= 0 && commandIndex + 1 < args.Length ? args[commandIndex + 1] : null;
+            return await bridge.RunAsync(originalCommand, Console.In, Console.Out, Console.Error, CancellationToken.None);
         }
         catch (Exception exception)
         {

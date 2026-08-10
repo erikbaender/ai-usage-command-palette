@@ -9,22 +9,40 @@ public static class UsageFormatting
         var name = snapshot.Provider.ToString();
         if (snapshot.Health is ProviderHealth.Unknown)
         {
-            return $"{name}  —";
+            return $"{name}  waiting";
         }
 
-        if (snapshot.Health is ProviderHealth.Unavailable or ProviderHealth.Unauthenticated or ProviderHealth.Error)
+        if (snapshot.Health is ProviderHealth.Unavailable)
         {
-            return $"{name}  —";
+            return $"{name}  not found";
         }
 
-        var session = FormatCompact(snapshot.GetWindow(UsageWindow.Session));
-        var weekly = FormatCompact(snapshot.GetWindow(UsageWindow.Weekly));
+        if (snapshot.Health is ProviderHealth.Unauthenticated)
+        {
+            return $"{name}  sign in";
+        }
+
+        if (snapshot.Health is ProviderHealth.Error)
+        {
+            return $"{name}  error";
+        }
+
+        var session = FormatRemainingCompact(snapshot.GetWindow(UsageWindow.Session));
+        var weekly = FormatRemainingCompact(snapshot.GetWindow(UsageWindow.Weekly));
         var stale = snapshot.Health == ProviderHealth.Stale || snapshot.IsStale(now, FreshnessPolicy.Default.ClaudeStaleAfter) ? " · stale" : string.Empty;
-        return $"{name}  5h {session} · 7d {weekly}{stale}";
+        return $"{name}  5h {session} left · 7d {weekly} left{stale}";
     }
+
+    public static string FormatClaudeStatusLine(ProviderSnapshot snapshot) =>
+        $"Claude 5h {FormatRemainingCompact(snapshot.GetWindow(UsageWindow.Session))} left · 7d {FormatRemainingCompact(snapshot.GetWindow(UsageWindow.Weekly))} left";
 
     public static string FormatCompact(UsageWindowSnapshot? window) =>
         window?.UsedPercent is double percent && UsagePercent.IsValid(percent)
+            ? $"{percent.ToString("0.#", CultureInfo.InvariantCulture)}%"
+            : "—";
+
+    public static string FormatRemainingCompact(UsageWindowSnapshot? window) =>
+        window?.RemainingPercent is double percent && UsagePercent.IsValid(percent)
             ? $"{percent.ToString("0.#", CultureInfo.InvariantCulture)}%"
             : "—";
 

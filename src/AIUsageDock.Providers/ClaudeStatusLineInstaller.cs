@@ -29,18 +29,16 @@ public sealed class ClaudeStatusLineInstaller
 
         var root = JsonNode.Parse(originalBytes)?.AsObject() ?? throw new JsonException("Claude settings must be a JSON object.");
         var existingCommand = root["statusLine"]?["command"]?.GetValue<string>();
-        if (string.IsNullOrWhiteSpace(existingCommand))
-        {
-            return new ClaudeInstallResult(false, false, null, "No existing Claude status-line command was found to wrap.");
-        }
         if (!string.IsNullOrWhiteSpace(existingCommand) && !replaceExisting)
         {
             return new ClaudeInstallResult(false, false, existingCommand, "An existing status-line command was found. Re-run with explicit replacement enabled to preserve and wrap it.");
         }
 
-        if (!File.Exists(BackupPath))
+        var backupCreated = false;
+        if (File.Exists(SettingsPath) && !File.Exists(BackupPath))
         {
             await File.WriteAllBytesAsync(BackupPath, originalBytes, cancellationToken);
+            backupCreated = true;
         }
 
         var statusLine = root["statusLine"]?.AsObject() ?? new JsonObject();
@@ -48,7 +46,10 @@ public sealed class ClaudeStatusLineInstaller
         statusLine["command"] = BuildBridgeCommand(bridgeExecutablePath, existingCommand ?? string.Empty);
         root["statusLine"] = statusLine;
         await AtomicWriteAsync(SettingsPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), cancellationToken);
-        return new ClaudeInstallResult(true, true, existingCommand, "Claude status-line wrapper installed; the original command is preserved in the wrapper arguments and backup file.");
+        var message = string.IsNullOrWhiteSpace(existingCommand)
+            ? "Claude usage status line installed. Claude Code will now show a built-in usage line."
+            : "Claude status-line wrapper installed; the original command is preserved in the wrapper arguments and backup file.";
+        return new ClaudeInstallResult(true, backupCreated, existingCommand, message);
     }
 
     public async Task<bool> RestoreAsync(CancellationToken cancellationToken)
@@ -63,8 +64,10 @@ public sealed class ClaudeStatusLineInstaller
         return true;
     }
 
-    public static string BuildBridgeCommand(string bridgeExecutablePath, string originalCommand) =>
-        $"{QuoteArgument(bridgeExecutablePath)} --command-line {QuoteArgument(originalCommand)}";
+    public static string BuildBridgeCommand(string bridgeExecutablePath, string? originalCommand) =>
+        string.IsNullOrWhiteSpace(originalCommand)
+            ? QuoteArgument(bridgeExecutablePath)
+            : $"{QuoteArgument(bridgeExecutablePath)} --command-line {QuoteArgument(originalCommand)}";
 
     private static string QuoteArgument(string value)
     {

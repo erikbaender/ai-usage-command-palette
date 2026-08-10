@@ -19,15 +19,15 @@ public sealed class ClaudeStatusLineBridge
         _clock = clock ?? new SystemClock();
     }
 
-    public async Task<int> RunAsync(string originalCommand, TextReader input, TextWriter output, TextWriter error, CancellationToken cancellationToken)
+    public async Task<int> RunAsync(string? originalCommand, TextReader input, TextWriter output, TextWriter error, CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(originalCommand);
         var payload = await ReadLimitedAsync(input, cancellationToken);
+        ProviderSnapshot? snapshot = null;
 
         // Caching is intentionally fail-open. A provider/cache error must never hide the user's status line.
         try
         {
-            var snapshot = UsageJson.ParseClaudeStatusLine(payload, _clock.UtcNow);
+            snapshot = UsageJson.ParseClaudeStatusLine(payload, _clock.UtcNow);
             if (snapshot.Windows.Count > 0)
             {
                 await _cacheStore.WriteAsync(snapshot, cancellationToken);
@@ -36,6 +36,14 @@ public sealed class ClaudeStatusLineBridge
         catch (Exception)
         {
             // Never write provider payloads, commands, or exception details to diagnostics.
+        }
+
+        if (string.IsNullOrWhiteSpace(originalCommand))
+        {
+            await output.WriteLineAsync(snapshot is { Windows.Count: > 0 }
+                ? UsageFormatting.FormatClaudeStatusLine(snapshot)
+                : "Claude usage waiting");
+            return 0;
         }
 
         return await _executor.ExecuteAsync(originalCommand, payload, output, error, cancellationToken);

@@ -59,6 +59,30 @@ public sealed class ClaudeBridgeTests
         }
     }
 
+    [Fact]
+    public async Task DefaultModeEmitsUsageLineWhenNoOriginalStatusLineExists()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ai-usage-dock-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var bridge = new ClaudeStatusLineBridge(
+                new ClaudeCacheStore(Path.Combine(root, "claude.json")),
+                clock: new FixedClock(DateTimeOffset.Parse("2026-08-10T12:00:00Z")));
+            var output = new StringWriter();
+            var payload = """{"rate_limits":{"five_hour":{"used_percentage":12},"seven_day":{"used_percentage":34}}}""";
+
+            var exitCode = await bridge.RunAsync(null, new StringReader(payload), output, new StringWriter(), CancellationToken.None);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal("Claude 5h 88% left · 7d 66% left" + Environment.NewLine, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private sealed class RecordingExecutor : IStatusLineCommandExecutor
     {
         private readonly int _exitCode;

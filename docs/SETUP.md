@@ -22,6 +22,19 @@ The resulting test MSIX is under:
 
 Install that package using the normal Windows AppX deployment flow. After deployment, reload Command Palette and add the Codex and Claude bands from Dock edit mode.
 
+## Recommended development loop
+
+For iterative development, use Visual Studio rather than repeatedly installing the generated MSIX:
+
+1. Open the repository/project in Visual Studio.
+2. Select `Debug` and `x64`.
+3. Use **Build > Deploy AIUsageDock.Extension**.
+4. Open Command Palette and run **Reload** with the subtitle `Reload Command Palette Extension`.
+
+The Visual Studio deployment step updates the packaged extension in place. Do not increment the manifest version, uninstall the package, or run `Add-AppDevPackage.ps1` for every code change. The certificate/developer-mode setup is a one-time machine setup; the Deploy/Reload cycle is the normal inner loop.
+
+PowerToys should normally run unelevated. Administrator mode is only needed when PowerToys must interact with another application that is itself running elevated.
+
 ## Codex
 
 The extension starts:
@@ -42,6 +55,8 @@ Claude Code passes the complete status-line JSON through stdin. The bridge:
 4. Runs the user's original command with the exact original JSON on stdin.
 5. Forwards stdout/stderr and returns the original exit code.
 
+After installing the extension, reload Command Palette and run the `Enable Claude usage` command once. The packaged bridge is copied with the extension and changes `~/.claude/settings.json` for the current user. If no status-line command exists, it installs a built-in usage line; if one already exists, it preserves and wraps that command. Run Claude Code once afterward so the local usage cache is populated.
+
 The installer backs up the original settings file to settings.json.ai-usage-dock.backup. It changes only statusLine.type and statusLine.command. If an existing status line is present, --replace is required. --restore restores the backup byte-for-byte.
 
 For arbitrary shell pipelines, keep the original command explicit through a script or powershell -NoProfile -File ...; direct executable-and-argument commands are launched without a shell.
@@ -49,7 +64,7 @@ For arbitrary shell pipelines, keep the original command explicit through a scri
 ## Troubleshooting
 
 - No Codex band values: verify codex app-server starts and the CLI is authenticated. The Dock shows a missing/authentication/error state instead of zero.
-- Claude shows waiting: invoke Claude Code after installing the bridge; rate_limits is only present for supported Claude.ai subscriber sessions after a response.
+- Claude shows waiting: run `Enable Claude usage` from Command Palette, then invoke Claude Code; rate_limits is only present for supported Claude.ai subscriber sessions after a response.
 - Claude shows stale: the cache is older than the 15-minute default threshold. Run Claude Code again; the old values remain visible to avoid a misleading empty state.
 - MSIX symbol warning: missing mspdbcmf.exe only prevents generation of a symbols package; the MSIX still builds.
 - Command Palette does not show the extension: install the MSIX, reload Command Palette, and verify the Dock is enabled.
