@@ -44,11 +44,16 @@ public static class UsageFormatting
     public static string FormatClaudeStatusLine(ProviderSnapshot snapshot) =>
         $"Claude 5h {FormatRemainingCompact(snapshot.GetWindow(UsageWindow.Session))} left · 7d {FormatRemainingCompact(snapshot.GetWindow(UsageWindow.Weekly))} left";
 
-    public static string FormatDockWeekly(ProviderSnapshot snapshot, DateTimeOffset now) =>
-        FormatDockLabel("Wk", snapshot.GetWindow(UsageWindow.Weekly), now, weekly: true);
+    public static string FormatDockWindow(ProviderSnapshot snapshot, UsageWindow window, DateTimeOffset now)
+    {
+        var usageWindow = snapshot.GetWindow(window);
+        var remaining = FormatRemainingCompact(usageWindow);
+        var countdown = usageWindow?.ResetsAt is DateTimeOffset resetAt
+            ? FormatDockResetCountdown(resetAt, now)
+            : string.Empty;
 
-    public static string FormatDockSession(ProviderSnapshot snapshot, DateTimeOffset now) =>
-        FormatDockLabel("Ses", snapshot.GetWindow(UsageWindow.Session), now, weekly: false);
+        return string.IsNullOrEmpty(countdown) ? remaining : $"{remaining} - {countdown}";
+    }
 
     public static string FormatCompact(UsageWindowSnapshot? window) =>
         window?.UsedPercent is double percent && UsagePercent.IsValid(percent)
@@ -98,26 +103,32 @@ public static class UsageFormatting
         return $"resets {remaining.Hours}h {remaining.Minutes}m";
     }
 
-    private static string FormatDockLabel(string label, UsageWindowSnapshot? window, DateTimeOffset now, bool weekly)
-    {
-        var remaining = FormatRemainingCompact(window);
-        var reset = window?.ResetsAt is DateTimeOffset resetAt
-            ? FormatDockReset(resetAt, now, weekly)
-            : "—";
-        return $"{label} {remaining}/{reset}";
-    }
-
-    private static string FormatDockReset(DateTimeOffset resetAt, DateTimeOffset now, bool weekly)
+    private static string FormatDockResetCountdown(DateTimeOffset resetAt, DateTimeOffset now)
     {
         var remaining = resetAt - now;
         if (remaining <= TimeSpan.Zero)
         {
-            return "0h0m";
+            return string.Empty;
         }
 
-        return weekly
-            ? $"{Math.Floor(remaining.TotalDays)}d{remaining.Hours}h"
-            : $"{remaining.Hours}h{remaining.Minutes}m";
+        var parts = new List<string>();
+        var days = (int)Math.Floor(remaining.TotalDays);
+        if (days > 0)
+        {
+            parts.Add($"{days}d");
+        }
+
+        if (remaining.Hours > 0)
+        {
+            parts.Add($"{remaining.Hours}h");
+        }
+
+        if (remaining.Minutes > 0)
+        {
+            parts.Add($"{remaining.Minutes}m");
+        }
+
+        return string.Join(" ", parts);
     }
 
     public static string FormatReset(DateTimeOffset? resetAt, DateTimeOffset now)

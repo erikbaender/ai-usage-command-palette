@@ -2,14 +2,20 @@
 
 ## Dock
 
-Use two independently pinnable bands where the SDK permits it:
+Use four independently pinnable bands because Command Palette does not expose a per-band width setting:
 
 ```text
-Wk 66%/3d6h
-Ses 88%/2h14m
+66% - 3d 6h
+Codex Weekly
+88% - 2h 14m
+Codex Session
+66% - 3d 6h
+Claude Weekly
+88% - 2h 14m
+Claude Session
 ```
 
-The top line shows the weekly remaining percentage and reset countdown. The bottom line shows the session remaining percentage and reset countdown. Labels are intentionally compact because Command Palette does not expose per-band width. Keep missing provider windows as `—` rather than fabricating values.
+Each band shows one provider/window pair. The top line is the remaining percentage followed by the nonzero reset units (`d`, `h`, `m`); the bottom line is the provider and window name. Keep missing provider windows as `—` rather than fabricating values.
 
 ## Expanded details
 

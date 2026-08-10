@@ -19,14 +19,12 @@
     <GenerateTestArtifacts>True</GenerateTestArtifacts>
     <GenerateAppxPackageOnBuild>True</GenerateAppxPackageOnBuild>
     <WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
-    <ClaudeBridgePackageDirectory>$(MSBuildProjectDirectory)\Bridge</ClaudeBridgePackageDirectory>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\AIUsageDock.Core\AIUsageDock.Core.csproj" />
     <ProjectReference Include="..\AIUsageDock.Providers\AIUsageDock.Providers.csproj" />
     <Manifest Include="$(ApplicationManifest)" />
     <Content Include="Assets\*" />
-    <Content Include="Bridge\AIUsageDock.Bridge.exe" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CommandPalette.Extensions" Version="0.9.260303001" />
@@ -40,8 +38,4 @@
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>
 
-  <Target Name="PublishClaudeBridge" BeforeTargets="PrepareForBuild;GetCopyToOutputDirectoryItems">
-    <MakeDir Directories="$(ClaudeBridgePackageDirectory)" />
-    <Exec Command="dotnet publish &quot;$(MSBuildProjectDirectory)\..\AIUsageDock.Bridge\AIUsageDock.Bridge.csproj&quot; -c $(Configuration) -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o &quot;$(ClaudeBridgePackageDirectory)&quot;" />
-  </Target>
 </Project>

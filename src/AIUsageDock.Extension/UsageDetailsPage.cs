@@ -15,7 +15,6 @@ public sealed partial class UsageDetailsPage : ContentPage
         _coordinator = coordinator;
         Title = $"{provider} usage";
         Name = $"ai-usage-dock.{provider.ToString().ToLowerInvariant()}";
-        Icon = new IconInfo(provider == ProviderId.Codex ? "\uE8A7" : "\uE77B");
         Commands =
         [
             new CommandContextItem(new RefreshUsageCommand(provider, coordinator)),
@@ -53,7 +52,6 @@ public sealed partial class UsageOverviewPage : ContentPage
         _coordinator = coordinator;
         Title = "AI Usage Dock";
         Name = "ai-usage-dock.overview";
-        Icon = new IconInfo("\uE945");
         _coordinator.SnapshotChanged += OnSnapshotChanged;
     }
 

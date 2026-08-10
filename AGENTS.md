@@ -12,8 +12,8 @@ Use this loop for iterative extension development:
    # For the signed MSIX build, follow Current verified workflow below.
    ```
 
-3. For Command Palette integration, use Visual Studio **Build > Deploy AIUsageDock.Extension** with `Debug` / `x64`.
-4. In Command Palette, run **Reload** with the subtitle **Reload Command Palette Extension**.
+3. Build the signed `Debug` / `x64` MSIX using the Current verified workflow below, then update the one installed package with `Add-AppxPackage`.
+4. In Command Palette, run **Reload** with the subtitle **Reload Command Palette Extension**. If Reload does not refresh the Dock, restart `Microsoft.CmdPal.UI.exe` or Command Palette itself.
 
 Do not repeatedly call `Add-AppxPackage`, run `Add-AppDevPackage.ps1`, uninstall/reinstall the MSIX, or increment `Package.appxmanifest` version numbers for ordinary code changes. Those actions create stale Command Palette registrations and can remove or duplicate Dock entries. If a reload does not refresh the extension, restart `Microsoft.CmdPal.UI.exe` or Command Palette itself; restarting only the PowerToys settings process is insufficient. If Windows rejects an in-place package update because the installed package has different contents at the same version, increment the manifest version once for that real package update; a successful package upgrade should still leave one installed package.
 
@@ -25,7 +25,7 @@ Add-AppxPackage -Path .\src\AIUsageDock.Extension\AppPackages\<current-package>\
 
 If this reports an untrusted root, the signer trust setup is incomplete; do not work around it by launching PowerShell with `RunAs` unattended.
 
-The extension project publishes the self-contained Claude bridge into the package automatically. Do not manually copy or install the bridge during normal builds.
+Claude usage is queried by the extension with claude -p "/usage" --output-format json; the Claude CLI must be available on the current-user PATH, or configured with AI_USAGE_CLAUDE_PATH. The Dock exposes four stable bands: com.erikbaender.aiusage.codex.session, com.erikbaender.aiusage.codex.weekly, com.erikbaender.aiusage.claude.session, and com.erikbaender.aiusage.claude.weekly.
 
 ## Current verified workflow
 
@@ -42,7 +42,7 @@ Update the resulting MSIX once with Add-AppxPackage. If the installed package ha
 
 Command Palette's Dock has no per-band width setting. Do not write an unsupported DockSize value into its settings; this Command Palette build resets Large back to Default. If the Command Palette UI exposes a larger Dock size in the future, that is a user-level global setting, not an extension setting. After deployment, reload Command Palette; restart Microsoft.CmdPal.UI.exe only if reload does not refresh it.
 
-Claude setup is automatic when the extension activates: it installs or updates only the AI Usage Dock bridge in the current user's Claude settings and leaves unrelated status-line commands alone. Do not execute a bridge binary directly from the WindowsApps install directory. The Claude cache is created after Claude Code emits its first status-line payload.
+Claude setup requires no settings-file changes. The provider starts the current-user Claude CLI with a bounded timeout and keeps the last successful snapshot if a later refresh fails.
 
 ## Signing and UAC
 
@@ -61,4 +61,5 @@ PowerToys administrator mode is unrelated to routine extension deployment. It is
 - Add-AppxPackage completes without an elevation prompt.
 - Command Palette Reload is run after deployment, or Microsoft.CmdPal.UI.exe is restarted.
 - `Get-AppxPackage -Name Erik.AIUsageDock` reports one installed package.
-- Command Palette has one AI Usage Dock provider and two Dock bands (Codex and Claude).
+- Command Palette has one AI Usage Dock provider and four Dock bands: Codex Session, Codex Weekly, Claude Session, and Claude Weekly.
+Claude diagnostics are written to the packaged app's user-local path: `%LOCALAPPDATA%\Packages\Erik.AIUsageDock_trvxfnfmwyq8y\LocalCache\Local\AIUsage\claude-cli.log`. The log is bounded and redacts common credential/session identifiers.

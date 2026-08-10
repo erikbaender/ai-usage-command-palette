@@ -4,11 +4,11 @@ AI Usage Dock is a Windows PowerToys Command Palette extension that shows live, 
 
 It includes:
 
-- Two independently pinnable Dock bands for Codex and Claude.
+- Four independently pinnable Dock bands for Codex/Claude Session and Weekly usage.
 - Compact 5-hour/session and 7-day/weekly used percentages.
 - Expanded details with remaining percentages, reset countdowns, plan/source, freshness, and actionable provider state.
 - A long-lived codex app-server adapter using account/rateLimits/read.
-- A preserving Claude Code status-line bridge that caches only rate_limits telemetry and forwards the existing status line.
+- Active Claude usage polling through claude -p "/usage" --output-format json.
 
 ## MVP
 
@@ -20,10 +20,9 @@ See docs/SETUP.md for build/install instructions and docs/MANUAL-VALIDATION.md f
 ## Projects
 
 - src/AIUsageDock.Core — normalized model, parsing, freshness, and formatting.
-- src/AIUsageDock.Providers — Codex app-server lifecycle, Claude cache, preserving bridge, and installer/restore flow.
-- src/AIUsageDock.Bridge — standalone executable used by Claude Code's statusLine.command.
+- src/AIUsageDock.Providers — Codex app-server lifecycle and active Claude CLI provider.
 - src/AIUsageDock.Extension — packaged WinRT/COM Command Palette extension and Dock UI.
-- tests/AIUsageDock.Tests — parser, bridge pass-through, cache, and installer contract tests.
+- tests/AIUsageDock.Tests — provider parsers, bridge compatibility, and usage formatting tests.
 
 ## Build and test
 
@@ -37,23 +36,14 @@ The tested build uses:
 
     dotnet restore src\AIUsageDock.Extension\AIUsageDock.Extension.csproj
     dotnet build src\AIUsageDock.Extension\AIUsageDock.Extension.csproj -c Debug -p:Platform=x64
-    dotnet restore src\AIUsageDock.Bridge\AIUsageDock.Bridge.csproj
     dotnet test tests\AIUsageDock.Tests\AIUsageDock.Tests.csproj -c Debug
 
 The MSIX is written under src/AIUsageDock.Extension/AppPackages/.
 
 ## Claude setup
 
-Claude Code's user settings are normally %USERPROFILE%\.claude\settings.json. Install the bridge only after reviewing the existing status-line command:
+The extension does not modify Claude settings or install a helper executable. On each refresh it runs:
 
-    dotnet run --project src\AIUsageDock.Bridge -- --install --bridge "C:\path\to\AIUsageDock.Bridge.exe"
+    claude -p "/usage" --output-format json --no-session-persistence
 
-If a status line already exists, the installer refuses to modify it unless explicitly requested:
-
-    dotnet run --project src\AIUsageDock.Bridge -- --install --bridge "C:\path\to\AIUsageDock.Bridge.exe" --replace
-
-Restore the original settings with:
-
-    dotnet run --project src\AIUsageDock.Bridge -- --restore
-
-The bridge writes usage-only data to %LOCALAPPDATA%\AIUsage\claude.json using atomic replacement and user-only ACLs where Windows permits them. Claude data remains visible after it becomes stale and is labelled as cached/stale.
+Ensure claude.exe is available on the PATH visible to PowerToys. If it is installed elsewhere, set AI_USAGE_CLAUDE_PATH to the executable path before starting PowerToys.

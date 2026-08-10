@@ -291,33 +291,6 @@ public sealed class CodexProvider : IUsageProvider
     }
 }
 
-public sealed class ClaudeProvider : IUsageProvider
-{
-    private readonly ClaudeCacheStore _cacheStore;
-    private readonly IClock _clock;
-    private readonly FreshnessPolicy _freshness;
-
-    public ClaudeProvider(ClaudeCacheStore? cacheStore = null, IClock? clock = null, FreshnessPolicy? freshness = null)
-    {
-        _cacheStore = cacheStore ?? new ClaudeCacheStore();
-        _clock = clock ?? new SystemClock();
-        _freshness = freshness ?? FreshnessPolicy.Default;
-    }
-
-    public ProviderId Id => ProviderId.Claude;
-
-    public event EventHandler<ProviderSnapshot>? SnapshotChanged;
-
-    public async Task<ProviderSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
-    {
-        var snapshot = await _cacheStore.ReadAsync(_clock.UtcNow, _freshness.ClaudeStaleAfter, cancellationToken);
-        SnapshotChanged?.Invoke(this, snapshot);
-        return snapshot;
-    }
-
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-}
-
 public static class CodexExecutableResolver
 {
     public static string? Resolve(string? configuredPath)

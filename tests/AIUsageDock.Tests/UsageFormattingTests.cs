@@ -35,7 +35,7 @@ public sealed class UsageFormattingTests
     }
 
     [Fact]
-    public void DockLabelsShowRemainingUsageAndResetCountdowns()
+    public void DockWindowLabelsShowRemainingUsageAndResetCountdowns()
     {
         var now = DateTimeOffset.Parse("2026-08-10T12:00:00Z");
         var snapshot = new ProviderSnapshot(
@@ -48,7 +48,39 @@ public sealed class UsageFormattingTests
             now,
             "codex app-server");
 
-        Assert.Equal("Ses 88%/2h14m", UsageFormatting.FormatDockSession(snapshot, now));
-        Assert.Equal("Wk 66%/3d6h", UsageFormatting.FormatDockWeekly(snapshot, now));
+        Assert.Equal("88% - 2h 14m", UsageFormatting.FormatDockWindow(snapshot, UsageWindow.Session, now));
+        Assert.Equal("66% - 3d 6h", UsageFormatting.FormatDockWindow(snapshot, UsageWindow.Weekly, now));
+    }
+
+    [Fact]
+    public void DockWindowLabelsOmitZeroResetUnits()
+    {
+        var now = DateTimeOffset.Parse("2026-08-10T12:00:00Z");
+        var snapshot = new ProviderSnapshot(
+            ProviderId.Claude,
+            ProviderHealth.Available,
+            [
+                new UsageWindowSnapshot(UsageWindow.Session, 1, now.AddMinutes(14), now),
+                new UsageWindowSnapshot(UsageWindow.Weekly, 2, now.AddDays(3), now),
+            ],
+            now,
+            "claude status line");
+
+        Assert.Equal("99% - 14m", UsageFormatting.FormatDockWindow(snapshot, UsageWindow.Session, now));
+        Assert.Equal("98% - 3d", UsageFormatting.FormatDockWindow(snapshot, UsageWindow.Weekly, now));
+    }
+
+    [Fact]
+    public void DockWindowLabelsOmitCountdownWhenResetIsDue()
+    {
+        var now = DateTimeOffset.Parse("2026-08-10T12:00:00Z");
+        var snapshot = new ProviderSnapshot(
+            ProviderId.Codex,
+            ProviderHealth.Available,
+            [new UsageWindowSnapshot(UsageWindow.Session, 12, now, now)],
+            now,
+            "codex app-server");
+
+        Assert.Equal("88%", UsageFormatting.FormatDockWindow(snapshot, UsageWindow.Session, now));
     }
 }

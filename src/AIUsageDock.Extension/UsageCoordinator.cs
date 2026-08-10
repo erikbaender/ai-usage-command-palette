@@ -19,7 +19,7 @@ public sealed class UsageCoordinator : IAsyncDisposable
         _refreshInterval = refreshInterval;
         foreach (var provider in _providers.Values)
         {
-            _snapshots[provider.Id] = ProviderSnapshot.Waiting(provider.Id, provider.Id == ProviderId.Claude ? "Claude Code status line cache" : "codex app-server", "Waiting for provider data");
+            _snapshots[provider.Id] = ProviderSnapshot.Waiting(provider.Id, provider.Id == ProviderId.Claude ? "Claude CLI · claude -p /usage" : "codex app-server", "Waiting for provider data");
             provider.SnapshotChanged += OnProviderSnapshotChanged;
         }
     }
