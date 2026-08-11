@@ -15,6 +15,16 @@ public sealed record UsageNotification(
     double? RemainingPercent = null,
     DateTimeOffset? ResetAt = null);
 
+public sealed record UsageNotificationMessage(
+    UsageNotification Notification,
+    string Title,
+    string Body);
+
+public interface IUsageNotificationSink
+{
+    void Show(UsageNotificationMessage message);
+}
+
 public sealed class UsageNotificationPreferences
 {
     public const double DefaultRemainingUsageThreshold = 50;
@@ -102,4 +112,87 @@ public static class UsageNotificationDetector
         return current.ObservedAt >= previousReset ||
             current.ResetsAt is DateTimeOffset currentReset && currentReset > previousReset;
     }
+}
+
+public sealed class UsageNotificationTracker
+{
+    private readonly UsageNotificationPreferences _preferences;
+    private readonly IUsageNotificationSink _sink;
+    private readonly Dictionary<ProviderId, ProviderSnapshot> _previousSnapshots = new();
+    private readonly object _gate = new();
+
+    public UsageNotificationTracker(
+        UsageNotificationPreferences preferences,
+        IUsageNotificationSink sink)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+        ArgumentNullException.ThrowIfNull(sink);
+        _preferences = preferences;
+        _sink = sink;
+    }
+
+    public void Observe(ProviderSnapshot current, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        if (current.Health != ProviderHealth.Available)
+        {
+            return;
+        }
+
+        ProviderSnapshot? previous;
+        lock (_gate)
+        {
+            _previousSnapshots.TryGetValue(current.Provider, out previous);
+            _previousSnapshots[current.Provider] = current;
+        }
+
+        if (previous is null)
+        {
+            return;
+        }
+
+        var notifications = UsageNotificationDetector.Detect(
+            previous,
+            current,
+            now,
+            _preferences.RemainingUsageThreshold);
+
+        foreach (var notification in notifications)
+        {
+            if (IsEnabled(notification.Kind))
+            {
+                _sink.Show(UsageNotificationText.CreateMessage(notification));
+            }
+        }
+    }
+
+    private bool IsEnabled(UsageNotificationKind kind) => kind switch
+    {
+        UsageNotificationKind.LimitReset => _preferences.ResetNotificationsEnabled,
+        UsageNotificationKind.RemainingThreshold => _preferences.ThresholdNotificationsEnabled,
+        _ => false,
+    };
+}
+
+public static class UsageNotificationText
+{
+    public static UsageNotificationMessage CreateMessage(UsageNotification notification) =>
+        new(notification, GetTitle(notification), GetBody(notification));
+
+    public static string GetTitle(UsageNotification notification) =>
+        notification.Kind == UsageNotificationKind.LimitReset
+            ? $"{notification.Provider} {FormatWindow(notification.Window)} limit reset"
+            : $"{notification.Provider} {FormatWindow(notification.Window)} usage remaining";
+
+    public static string GetBody(UsageNotification notification) =>
+        notification.Kind == UsageNotificationKind.LimitReset
+            ? "Your usage limit is available again."
+            : $"{notification.RemainingPercent!.Value:0}% of the limit remains.";
+
+    private static string FormatWindow(UsageWindow window) => window switch
+    {
+        UsageWindow.Session => "session",
+        UsageWindow.Weekly => "weekly",
+        _ => window.ToString().ToLowerInvariant(),
+    };
 }

@@ -7,29 +7,16 @@ namespace AIUsageDock.Extension;
 public sealed class UsageNotificationService : IDisposable
 {
     private readonly UsageCoordinator _coordinator;
-    private readonly UsageNotificationPreferences _preferences;
-    private readonly AppNotificationManager? _manager;
-    private readonly Dictionary<ProviderId, ProviderSnapshot> _previousSnapshots = new();
-    private readonly object _gate = new();
-    private bool _registered;
+    private readonly UsageNotificationTracker _tracker;
+    private readonly WindowsUsageNotificationSink _sink;
     private bool _disposed;
 
     public UsageNotificationService(UsageCoordinator coordinator, UsageNotificationPreferences preferences)
     {
         _coordinator = coordinator;
-        _preferences = preferences;
+        _sink = new WindowsUsageNotificationSink();
+        _tracker = new UsageNotificationTracker(preferences, _sink);
         _coordinator.SnapshotChanged += OnSnapshotChanged;
-
-        try
-        {
-            _manager = AppNotificationManager.Default;
-            _manager.Register();
-            _registered = true;
-        }
-        catch
-        {
-            // Notifications are optional. Registration failures must not stop the extension.
-        }
     }
 
     public void Dispose()
@@ -41,78 +28,72 @@ public sealed class UsageNotificationService : IDisposable
 
         _disposed = true;
         _coordinator.SnapshotChanged -= OnSnapshotChanged;
-        if (_registered)
-        {
-            try { _manager?.Unregister(); } catch { }
-        }
+        _sink.Dispose();
     }
 
     private void OnSnapshotChanged(object? sender, ProviderSnapshot current)
     {
-        if (current.Health != ProviderHealth.Available)
-        {
-            return;
-        }
-        ProviderSnapshot? previous;
-        lock (_gate)
-        {
-            _previousSnapshots.TryGetValue(current.Provider, out previous);
-            _previousSnapshots[current.Provider] = current;
-        }
-
-        if (previous is null || _manager is null || !_registered)
-        {
-            return;
-        }
-
-        var notifications = UsageNotificationDetector.Detect(
-            previous,
-            current,
-            DateTimeOffset.UtcNow,
-            _preferences.RemainingUsageThreshold);
-
-        foreach (var notification in notifications)
-        {
-            if ((notification.Kind == UsageNotificationKind.LimitReset && !_preferences.ResetNotificationsEnabled) ||
-                (notification.Kind == UsageNotificationKind.RemainingThreshold && !_preferences.ThresholdNotificationsEnabled))
-            {
-                continue;
-            }
-
-            Show(notification);
-        }
+        _tracker.Observe(current, DateTimeOffset.UtcNow);
     }
+}
 
-    private void Show(UsageNotification notification)
+internal sealed class WindowsUsageNotificationSink : IUsageNotificationSink, IDisposable
+{
+    private readonly AppNotificationManager? _manager;
+    private bool _registered;
+
+    public Exception? LastError { get; private set; }
+
+    public WindowsUsageNotificationSink()
     {
         try
         {
-            var toast = new AppNotificationBuilder()
-                .AddText(GetTitle(notification))
-                .AddText(GetBody(notification))
-                .BuildNotification();
-            _manager!.Show(toast);
+            _manager = AppNotificationManager.Default;
+            _manager.Register();
+            _registered = true;
         }
-        catch
+        catch (Exception exception)
         {
-            // Notification failures are non-fatal and should not interrupt refreshes.
+            LastError = exception;
+            // Notifications are optional. Registration failures must not stop the extension.
         }
     }
 
-    private static string GetTitle(UsageNotification notification) =>
-        notification.Kind == UsageNotificationKind.LimitReset
-            ? $"{notification.Provider} {FormatWindow(notification.Window)} limit reset"
-            : $"{notification.Provider} {FormatWindow(notification.Window)} usage remaining";
-
-    private static string GetBody(UsageNotification notification) =>
-        notification.Kind == UsageNotificationKind.LimitReset
-            ? "Your usage limit is available again."
-            : $"{notification.RemainingPercent!.Value:0}% of the limit remains.";
-
-    private static string FormatWindow(UsageWindow window) => window switch
+    public void Show(UsageNotificationMessage message)
     {
-        UsageWindow.Session => "session",
-        UsageWindow.Weekly => "weekly",
-        _ => window.ToString().ToLowerInvariant(),
-    };
+        TryShow(message);
+    }
+
+    public bool TryShow(UsageNotificationMessage message)
+    {
+        if (!_registered || _manager is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var toast = new AppNotificationBuilder()
+                .AddText(message.Title)
+                .AddText(message.Body)
+                .BuildNotification();
+            _manager.Show(toast);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            LastError = exception;
+            // Notification failures are non-fatal and should not interrupt refreshes.
+            return false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_registered)
+        {
+            try { _manager?.Unregister(); } catch { }
+            _registered = false;
+        }
+    }
 }
