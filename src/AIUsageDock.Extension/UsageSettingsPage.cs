@@ -22,7 +22,7 @@ public sealed class UsageSettingsPage
         ExtensionSettings.Add(new ChoiceSetSetting(
             RunningSessionIntervalKey,
             "Running-session polling interval",
-            "How often to refresh usage while Claude Code is running.",
+            "Delay after each usage refresh while Claude Code is running.",
             CreateIntervalChoices(UsagePollingPolicy.Default.RunningSessionInterval)));
         ExtensionSettings.SettingsChanged += OnSettingsChanged;
     }
@@ -43,7 +43,7 @@ public sealed class UsageSettingsPage
 
     private static List<ChoiceSetSetting.Choice> CreateIntervalChoices(TimeSpan defaultInterval)
     {
-        var choices = new[] { 15, 30, 60, 120, 300 }
+        var choices = new[] { 1, 5, 15, 30, 60, 120, 300 }
             .Where(seconds => seconds != (int)defaultInterval.TotalSeconds)
             .Select(seconds => new ChoiceSetSetting.Choice(FormatInterval(seconds), seconds.ToString()))
             .ToList();
@@ -51,5 +51,11 @@ public sealed class UsageSettingsPage
         return choices;
     }
 
-    private static string FormatInterval(int seconds) => seconds < 60 ? $"{seconds} seconds" : $"{seconds / 60} minutes";
+    private static string FormatInterval(int seconds) => seconds switch
+    {
+        1 => "1 second",
+        < 60 => $"{seconds} seconds",
+        60 => "1 minute",
+        _ => $"{seconds / 60} minutes",
+    };
 }

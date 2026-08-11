@@ -9,6 +9,8 @@ It includes:
 - Expanded details with remaining percentages, reset countdowns, plan/source, freshness, and actionable provider state.
 - A long-lived codex app-server adapter using account/rateLimits/read.
 - Active Claude usage polling through claude -p "/usage" --output-format json.
+- One-second delay between Claude usage reads while a Claude session is running; the CLI execution time is added to that delay.
+- Provider icons blink between full and half opacity on a one-second cycle while recent Codex or Claude process activity indicates usage is being consumed.
 
 ## MVP
 

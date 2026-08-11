@@ -42,7 +42,7 @@ public static class UsageJson
             windows.Add(new UsageWindowSnapshot(
                 window,
                 UsagePercent.IsValid(used) ? used : null,
-                match.Groups["reset"].Success ? ParseClaudeCliReset(match.Groups["reset"].Value, observedAt) : null,
+                match.Groups["reset"].Success ? ParseClaudeCliReset(match.Groups["reset"].Value, window, observedAt) : null,
                 observedAt));
         }
 
@@ -96,7 +96,7 @@ public static class UsageJson
         return new ProviderSnapshot(ProviderId.Codex, ProviderHealth.Available, windows.Values.OrderBy(window => window.Window).ToArray(), observedAt, "codex app-server · account/rateLimits/read", null, planType);
     }
 
-    private static DateTimeOffset ParseClaudeCliReset(string value, DateTimeOffset observedAt)
+    private static DateTimeOffset ParseClaudeCliReset(string value, UsageWindow window, DateTimeOffset observedAt)
     {
         var trimmed = value.Trim();
         var zoneStart = trimmed.LastIndexOf(" (", StringComparison.Ordinal);
@@ -107,10 +107,15 @@ public static class UsageJson
         var reset = ToDateTimeOffset(local, zone);
         if (reset <= observedAt)
         {
-            local = ParseClaudeCliLocalDate(dateText, observedAt.Year + 1);
-            reset = ToDateTimeOffset(local, zone);
+            // Claude reports the date without a year. A session reset is a
+            // recurring 5-hour boundary, so rolling it to next year can make
+            // a recently elapsed reset appear to be 364 days away. The weekly
+            // bucket has the same issue at a 7-day cadence.
+            var cadence = window == UsageWindow.Session ? TimeSpan.FromHours(5) : TimeSpan.FromDays(7);
+            var elapsed = observedAt - reset;
+            var periods = (long)Math.Floor(elapsed.Ticks / (double)cadence.Ticks) + 1;
+            reset = reset.AddTicks(cadence.Ticks * periods);
         }
-
         return reset;
     }
 

@@ -32,17 +32,30 @@ public sealed class UsageJsonTests
     }
 
     [Fact]
-    public void ParsesClaudeCliUsageAfterSessionResetWithoutNewResetTime()
+    public void ParsesClaudeCliSessionWhenResetIsNotReportedAfterReset()
     {
-        var observed = DateTimeOffset.Parse("2026-08-11T20:00:00Z");
+        var observed = DateTimeOffset.Parse("2026-08-11T01:00:00Z");
         var snapshot = UsageJson.ParseClaudeCliUsage(
-            """{"is_error":false,"result":"Current session: 0% used\nCurrent week (all models): 67% used · resets Aug 12, 7:59am (Europe/Berlin)"}""",
+            """{"is_error":false,"result":"Current session: 0% used\nCurrent week (all models): 67% used · resets Aug 12, 8am (Europe/Berlin)"}""",
             observed);
 
-        Assert.Equal(0, snapshot.GetWindow(UsageWindow.Session)!.UsedPercent);
-        Assert.Null(snapshot.GetWindow(UsageWindow.Session)!.ResetsAt);
-        Assert.Equal(67, snapshot.GetWindow(UsageWindow.Weekly)!.UsedPercent);
+        var session = snapshot.GetWindow(UsageWindow.Session)!;
+        Assert.Equal(0, session.UsedPercent);
+        Assert.Null(session.ResetsAt);
+        Assert.Equal(33, snapshot.GetWindow(UsageWindow.Weekly)!.RemainingPercent);
     }
+
+    [Fact]
+    public void RollsPastClaudeSessionResetForwardByFiveHourCadence()
+    {
+        var observed = DateTimeOffset.Parse("2026-08-11T02:59:00Z");
+        var snapshot = UsageJson.ParseClaudeCliUsage(
+            """{"is_error":false,"result":"Current session: 100% used · resets Aug 10, 3:50am (UTC)"}""",
+            observed);
+
+        Assert.Equal(DateTimeOffset.Parse("2026-08-11T04:50:00Z"), snapshot.GetWindow(UsageWindow.Session)!.ResetsAt);
+    }
+
     [Fact]
     public void RejectsClaudeCliUsageWithoutRecognizedWindows()
     {

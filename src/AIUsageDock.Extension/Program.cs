@@ -54,9 +54,10 @@ public static class Program
     {
         await using var server = new ComServer();
         using var disposed = new ManualResetEvent(false);
-        await using var coordinator = UsageCoordinator.CreateDefault();
+        using var activityMonitor = new ProviderActivityMonitor();
+        await using var coordinator = UsageCoordinator.CreateDefault(claudeSessionDetector: activityMonitor);
         var notificationPreferences = new UsageNotificationPreferences();
-        using var provider = new AIUsageDockCommandsProvider(coordinator, notificationPreferences);
+        using var provider = new AIUsageDockCommandsProvider(coordinator, notificationPreferences, activityMonitor);
         using var notificationService = new UsageNotificationService(coordinator, notificationPreferences);
         coordinator.Start();
         var extension = new AIUsageDockExtension(disposed, provider);
