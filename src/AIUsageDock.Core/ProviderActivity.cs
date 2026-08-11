@@ -53,17 +53,24 @@ public sealed class ProviderCpuActivityTracker
 {
     private readonly Dictionary<int, TimeSpan> _previousCpuTimes = new();
     private readonly TimeSpan _activeHoldDuration;
+    private readonly TimeSpan _minimumCpuDelta;
     private DateTimeOffset? _lastActivity;
     private bool _hasObserved;
 
-    public ProviderCpuActivityTracker(TimeSpan activeHoldDuration)
+    public ProviderCpuActivityTracker(TimeSpan activeHoldDuration, TimeSpan minimumCpuDelta)
     {
         if (activeHoldDuration <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(activeHoldDuration), "The activity hold duration must be positive.");
         }
 
+        if (minimumCpuDelta <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minimumCpuDelta), "The minimum CPU delta must be positive.");
+        }
+
         _activeHoldDuration = activeHoldDuration;
+        _minimumCpuDelta = minimumCpuDelta;
     }
 
     public bool Observe(
@@ -82,7 +89,8 @@ public sealed class ProviderCpuActivityTracker
         {
             currentProcessIds.Add(process.ProcessId);
             if (_previousCpuTimes.TryGetValue(process.ProcessId, out var previousCpuTime)
-                ? process.TotalProcessorTime != previousCpuTime
+                ? process.TotalProcessorTime < previousCpuTime ||
+                    process.TotalProcessorTime - previousCpuTime >= _minimumCpuDelta
                 : _hasObserved)
             {
                 activityObserved = true;

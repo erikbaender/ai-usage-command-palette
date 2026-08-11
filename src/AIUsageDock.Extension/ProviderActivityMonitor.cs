@@ -31,7 +31,9 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
         foreach (var provider in Enum.GetValues<ProviderId>())
         {
             _states[provider] = new ProviderActivityState(provider, IsActive: false, IsDimmed: false);
-            _activityTrackers[provider] = new ProviderCpuActivityTracker(TimeSpan.FromSeconds(3));
+            _activityTrackers[provider] = new ProviderCpuActivityTracker(
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromMilliseconds(50));
         }
 
         _monitorTask = MonitorAsync(_shutdown.Token);
