@@ -85,6 +85,19 @@ public sealed class UsageFormattingTests
     }
 
     [Fact]
+    public void UnstartedClaudeSessionWithoutResetUsesTheFullSessionPeriod()
+    {
+        var now = DateTimeOffset.Parse("2026-08-10T12:00:00Z");
+        var snapshot = new ProviderSnapshot(
+            ProviderId.Claude,
+            ProviderHealth.Available,
+            [new UsageWindowSnapshot(UsageWindow.Session, 0, null, now)],
+            now,
+            "Claude CLI · claude -p /usage");
+
+        Assert.Equal("100% - 5h", UsageFormatting.FormatDockWindow(snapshot, UsageWindow.Session, now));
+    }
+    [Fact]
     public void DockWindowLabelsOmitCountdownWhenResetIsDue()
     {
         var now = DateTimeOffset.Parse("2026-08-10T12:00:00Z");
