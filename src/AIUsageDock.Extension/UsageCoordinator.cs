@@ -126,8 +126,9 @@ public sealed class UsageCoordinator : IAsyncDisposable
             try
             {
                 await RefreshAsync(cancellationToken);
-                var interval = PollingPolicy.GetInterval(_claudeSessionDetector.IsSessionRunning());
-                await WaitForNextRefreshAsync(interval, cancellationToken);
+                var sessionRunning = _claudeSessionDetector.IsSessionRunning();
+                var interval = PollingPolicy.GetInterval(sessionRunning);
+                await WaitForNextRefreshAsync(interval, watchForSessionStart: !sessionRunning, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -140,14 +141,32 @@ public sealed class UsageCoordinator : IAsyncDisposable
         }
     }
 
-    private async Task WaitForNextRefreshAsync(TimeSpan interval, CancellationToken cancellationToken)
+    private async Task WaitForNextRefreshAsync(
+        TimeSpan interval,
+        bool watchForSessionStart,
+        CancellationToken cancellationToken)
     {
         using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var delay = Task.Delay(interval, waitCancellation.Token);
         var settingsChanged = _scheduleChanged.WaitAsync(waitCancellation.Token);
-        var completed = await Task.WhenAny(delay, settingsChanged);
+        var sessionStarted = watchForSessionStart
+            ? WaitForClaudeSessionStartAsync(waitCancellation.Token)
+            : Task.Delay(Timeout.InfiniteTimeSpan, waitCancellation.Token);
+        var completed = await Task.WhenAny(delay, settingsChanged, sessionStarted);
         waitCancellation.Cancel();
         await completed;
+    }
+
+    private async Task WaitForClaudeSessionStartAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            if (_claudeSessionDetector.IsSessionRunning())
+            {
+                return;
+            }
+        }
     }
 
     private void OnProviderSnapshotChanged(object? sender, ProviderSnapshot snapshot)
