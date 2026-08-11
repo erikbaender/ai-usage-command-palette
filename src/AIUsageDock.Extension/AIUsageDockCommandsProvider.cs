@@ -16,7 +16,10 @@ public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisp
     private readonly UsageSettingsPage _settingsPage;
     private bool _disposed;
 
-    public AIUsageDockCommandsProvider(UsageCoordinator coordinator, UsageNotificationPreferences notificationPreferences)
+    public AIUsageDockCommandsProvider(
+        UsageCoordinator coordinator,
+        UsageNotificationPreferences notificationPreferences,
+        ProviderActivityMonitor activityMonitor)
     {
         _coordinator = coordinator;
         _notificationPreferences = notificationPreferences;
@@ -42,10 +45,10 @@ public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisp
             "50"));
         _settings.SettingsChanged += OnSettingsChanged;
         ApplySettings();
-        _codexSessionBand = new UsageDockItem(ProviderId.Codex, UsageWindow.Session, coordinator);
-        _codexWeeklyBand = new UsageDockItem(ProviderId.Codex, UsageWindow.Weekly, coordinator);
-        _claudeSessionBand = new UsageDockItem(ProviderId.Claude, UsageWindow.Session, coordinator);
-        _claudeWeeklyBand = new UsageDockItem(ProviderId.Claude, UsageWindow.Weekly, coordinator);
+        _codexSessionBand = new UsageDockItem(ProviderId.Codex, UsageWindow.Session, coordinator, activityMonitor);
+        _codexWeeklyBand = new UsageDockItem(ProviderId.Codex, UsageWindow.Weekly, coordinator, activityMonitor);
+        _claudeSessionBand = new UsageDockItem(ProviderId.Claude, UsageWindow.Session, coordinator, activityMonitor);
+        _claudeWeeklyBand = new UsageDockItem(ProviderId.Claude, UsageWindow.Weekly, coordinator, activityMonitor);
 
     }
 

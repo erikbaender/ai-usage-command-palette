@@ -33,13 +33,15 @@ public sealed class UsageCoordinator : IAsyncDisposable
 
     public event EventHandler<ProviderSnapshot>? SnapshotChanged;
 
-    public static UsageCoordinator CreateDefault(UsagePollingPolicy? pollingPolicy = null) => new(
+    public static UsageCoordinator CreateDefault(
+        UsagePollingPolicy? pollingPolicy = null,
+        IClaudeSessionDetector? claudeSessionDetector = null) => new(
         [
             new CodexProvider(),
             new ClaudeProvider(),
         ],
         pollingPolicy ?? UsagePollingPolicy.Default,
-        new ClaudeSessionDetector());
+        claudeSessionDetector ?? new ClaudeSessionDetector());
 
     public UsagePollingPolicy PollingPolicy
     {
