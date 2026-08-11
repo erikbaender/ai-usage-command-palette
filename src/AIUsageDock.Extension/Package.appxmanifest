@@ -4,12 +4,13 @@
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
   xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap3 rescap">
+  IgnorableNamespaces="uap uap3 desktop rescap">
   <Identity
     Name="Erik.AIUsageDock"
     Publisher="CN=AI Usage Dock"
-    Version="0.1.22.0" />
+    Version="0.1.24.0" />
   <Properties>
     <DisplayName>AI Usage Dock</DisplayName>
     <PublisherDisplayName>AI Usage Dock</PublisherDisplayName>
@@ -35,6 +36,16 @@
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
       <Extensions>
+        <desktop:Extension Category="windows.toastNotificationActivation">
+          <desktop:ToastNotificationActivation ToastActivatorCLSID="fa318b0c-0267-4db2-a2be-75e6af717d55" />
+        </desktop:Extension>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="AIUsageDock.Extension.exe" Arguments="----AppNotificationActivated:" DisplayName="AI Usage Dock notifications">
+              <com:Class Id="fa318b0c-0267-4db2-a2be-75e6af717d55" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
         <com:Extension Category="windows.comServer">
           <com:ComServer>
             <com:ExeServer Executable="AIUsageDock.Extension.exe" Arguments="-RegisterProcessAsComServer" DisplayName="AI Usage Dock">

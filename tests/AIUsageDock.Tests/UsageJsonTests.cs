@@ -55,6 +55,7 @@ public sealed class UsageJsonTests
 
         Assert.Equal(DateTimeOffset.Parse("2026-08-11T04:50:00Z"), snapshot.GetWindow(UsageWindow.Session)!.ResetsAt);
     }
+
     [Fact]
     public void RejectsClaudeCliUsageWithoutRecognizedWindows()
     {
