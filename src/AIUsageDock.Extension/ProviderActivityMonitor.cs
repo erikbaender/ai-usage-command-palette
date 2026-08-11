@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 using AIUsageDock.Core;
 using Microsoft.Win32.SafeHandles;
 
@@ -14,6 +15,8 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
     private readonly object _gate = new();
     private readonly TimeSpan _halfPeriod;
     private readonly Task _monitorTask;
+    private readonly Dictionary<ProviderId, ProviderCpuActivityTracker> _activityTrackers = new();
+    private bool _claudeSessionRunning;
     private bool _disposed;
 
     public ProviderActivityMonitor(TimeSpan? blinkPeriod = null)
@@ -28,6 +31,7 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
         foreach (var provider in Enum.GetValues<ProviderId>())
         {
             _states[provider] = new ProviderActivityState(provider, IsActive: false, IsDimmed: false);
+            _activityTrackers[provider] = new ProviderCpuActivityTracker(TimeSpan.FromSeconds(3));
         }
 
         _monitorTask = MonitorAsync(_shutdown.Token);
@@ -43,7 +47,13 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
         }
     }
 
-    public bool IsSessionRunning() => GetState(ProviderId.Claude).IsActive;
+    public bool IsSessionRunning()
+    {
+        lock (_gate)
+        {
+            return _claudeSessionRunning;
+        }
+    }
 
     public void Dispose()
     {
@@ -79,9 +89,22 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
                 processes = Array.Empty<ProcessDescriptor>();
             }
 
+            lock (_gate)
+            {
+                _claudeSessionRunning = ProviderActivityDetection.IsActive(
+                    ProviderId.Claude,
+                    processes,
+                    Environment.ProcessId);
+            }
+
+            var observedAt = DateTimeOffset.UtcNow;
             foreach (var provider in Enum.GetValues<ProviderId>())
             {
-                var active = ProviderActivityDetection.IsActive(provider, processes, Environment.ProcessId);
+                var active = _activityTrackers[provider].Observe(
+                    provider,
+                    processes,
+                    Environment.ProcessId,
+                    observedAt);
                 Publish(new ProviderActivityState(provider, active, active && dimmed));
             }
 
@@ -123,15 +146,38 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
         var processes = new List<ProcessDescriptor>();
         do
         {
+            var processId = unchecked((int)entry.ProcessId);
+            var executableFile = entry.ExecutableFile ?? string.Empty;
             processes.Add(new ProcessDescriptor(
-                unchecked((int)entry.ProcessId),
+                processId,
                 unchecked((int)entry.ParentProcessId),
-                entry.ExecutableFile ?? string.Empty));
+                executableFile,
+                IsProviderProcess(executableFile) ? ReadTotalProcessorTime(processId) : TimeSpan.Zero));
             entry.Size = (uint)Marshal.SizeOf<ProcessEntry32>();
         }
         while (Process32Next(snapshot, ref entry));
 
         return processes;
+    }
+
+    private static bool IsProviderProcess(string executableFile)
+    {
+        var name = Path.GetFileNameWithoutExtension(executableFile);
+        return name.Equals("codex", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("claude", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static TimeSpan ReadTotalProcessorTime(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return process.TotalProcessorTime;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or SystemException)
+        {
+            return TimeSpan.Zero;
+        }
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
