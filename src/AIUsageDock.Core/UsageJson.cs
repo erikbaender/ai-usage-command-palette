@@ -29,7 +29,7 @@ public static class UsageJson
         foreach (var line in result.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var match = Regex.Match(line,
-                "^Current (?<window>session|week \\(all models\\)):\\s*(?<used>\\d+(?:\\.\\d+)?)%\\s+used\\s+·\\s+resets\\s+(?<reset>.+)$",
+                "^Current (?<window>session|week \\(all models\\)):\\s*(?<used>\\d+(?:\\.\\d+)?)%\\s+used(?:\\s+·\\s+resets\\s+(?<reset>.+))?$",
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
             if (!match.Success || !double.TryParse(match.Groups["used"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var used))
             {
@@ -42,7 +42,7 @@ public static class UsageJson
             windows.Add(new UsageWindowSnapshot(
                 window,
                 UsagePercent.IsValid(used) ? used : null,
-                ParseClaudeCliReset(match.Groups["reset"].Value, observedAt),
+                match.Groups["reset"].Success ? ParseClaudeCliReset(match.Groups["reset"].Value, observedAt) : null,
                 observedAt));
         }
 

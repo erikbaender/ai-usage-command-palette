@@ -66,6 +66,30 @@ public sealed class UsageNotificationTests
     }
 
     [Fact]
+    public void DetectsResetWhenProviderOmitsTheNextResetTime()
+    {
+        var observedAt = DateTimeOffset.Parse("2026-08-10T12:00:00Z");
+        var resetAt = observedAt.AddMinutes(5);
+        var weeklyResetAt = observedAt.AddDays(1);
+        var previous = Snapshot(observedAt, 10, 20, resetAt, weeklyResetAt);
+        var current = new ProviderSnapshot(
+            ProviderId.Codex,
+            ProviderHealth.Available,
+            [
+                new UsageWindowSnapshot(UsageWindow.Session, 0, null, resetAt.AddMinutes(1)),
+                new UsageWindowSnapshot(UsageWindow.Weekly, 20, weeklyResetAt, resetAt.AddMinutes(1)),
+            ],
+            resetAt.AddMinutes(1),
+            "test");
+
+        var notifications = UsageNotificationDetector.Detect(previous, current, current.LastUpdated!.Value);
+
+        var notification = Assert.Single(notifications);
+        Assert.Equal(UsageNotificationKind.LimitReset, notification.Kind);
+        Assert.Equal(UsageWindow.Session, notification.Window);
+    }
+
+    [Fact]
     public void DoesNotNotifyAgainWhenAWindowRemainsBelowTheThreshold()
     {
         var time = DateTimeOffset.Parse("2026-08-10T12:00:00Z");

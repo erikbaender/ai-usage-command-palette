@@ -7,7 +7,7 @@ namespace AIUsageDock.Extension;
 public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisposable
 {
     private readonly UsageCoordinator _coordinator;
-    private readonly Settings _settings = new();
+    private readonly Settings _settings;
     private readonly UsageNotificationPreferences _notificationPreferences;
     private readonly UsageDockItem _codexSessionBand;
     private readonly UsageDockItem _codexWeeklyBand;
@@ -20,6 +20,8 @@ public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisp
     {
         _coordinator = coordinator;
         _notificationPreferences = notificationPreferences;
+        _settingsPage = new UsageSettingsPage(coordinator);
+        _settings = _settingsPage.ExtensionSettings;
         Settings = _settings;
         DisplayName = "AI Usage Dock";
         Icon = new IconInfo("\uE945");
@@ -44,8 +46,7 @@ public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisp
         _codexWeeklyBand = new UsageDockItem(ProviderId.Codex, UsageWindow.Weekly, coordinator);
         _claudeSessionBand = new UsageDockItem(ProviderId.Claude, UsageWindow.Session, coordinator);
         _claudeWeeklyBand = new UsageDockItem(ProviderId.Claude, UsageWindow.Weekly, coordinator);
-        _settingsPage = new UsageSettingsPage(coordinator);
-        Settings = _settingsPage.ExtensionSettings;
+
     }
 
     public override ICommandItem[] TopLevelCommands() =>
