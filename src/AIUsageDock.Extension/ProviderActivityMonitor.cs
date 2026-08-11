@@ -17,6 +17,7 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
     private readonly Task _monitorTask;
     private readonly Dictionary<ProviderId, ProviderCpuActivityTracker> _activityTrackers = new();
     private bool _claudeSessionRunning;
+    private bool _claudeUsageSessionActive;
     private bool _disposed;
 
     public ProviderActivityMonitor(TimeSpan? blinkPeriod = null)
@@ -32,7 +33,7 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
         {
             _states[provider] = new ProviderActivityState(provider, IsActive: false, IsDimmed: false);
             _activityTrackers[provider] = new ProviderCpuActivityTracker(
-                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(10),
                 TimeSpan.FromMilliseconds(50));
         }
 
@@ -54,6 +55,21 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
         lock (_gate)
         {
             return _claudeSessionRunning;
+        }
+    }
+
+    public void ObserveSnapshot(object? sender, ProviderSnapshot snapshot)
+    {
+        if (snapshot.Provider != ProviderId.Claude)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            _claudeUsageSessionActive = UsageSessionActivity.IsClaudeSessionActive(
+                snapshot,
+                DateTimeOffset.UtcNow);
         }
     }
 
@@ -107,6 +123,13 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
                     processes,
                     Environment.ProcessId,
                     observedAt);
+                if (provider == ProviderId.Claude)
+                {
+                    lock (_gate)
+                    {
+                        active |= _claudeUsageSessionActive;
+                    }
+                }
                 Publish(new ProviderActivityState(provider, active, active && dimmed));
             }
 
@@ -153,20 +176,33 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
             processes.Add(new ProcessDescriptor(
                 processId,
                 unchecked((int)entry.ParentProcessId),
-                executableFile,
-                IsProviderProcess(executableFile) ? ReadTotalProcessorTime(processId) : TimeSpan.Zero));
+                executableFile));
             entry.Size = (uint)Marshal.SizeOf<ProcessEntry32>();
         }
         while (Process32Next(snapshot, ref entry));
 
-        return processes;
+        var activityProcessIds = Enum.GetValues<ProviderId>()
+            .SelectMany(provider => ProviderActivityDetection.FindExternalProviderProcessTrees(
+                provider,
+                processes,
+                Environment.ProcessId))
+            .Select(process => process.ProcessId)
+            .ToHashSet();
+        return processes.Select(process => activityProcessIds.Contains(process.ProcessId)
+                ? WithProcessActivity(process)
+                : process)
+            .ToArray();
     }
 
-    private static bool IsProviderProcess(string executableFile)
+    private static ProcessDescriptor WithProcessActivity(ProcessDescriptor process)
     {
-        var name = Path.GetFileNameWithoutExtension(executableFile);
-        return name.Equals("codex", StringComparison.OrdinalIgnoreCase) ||
-            name.Equals("claude", StringComparison.OrdinalIgnoreCase);
+        var io = ReadIoCounters(process.ProcessId);
+        return process with
+        {
+            TotalProcessorTime = ReadTotalProcessorTime(process.ProcessId),
+            TotalIoOperations = io.Operations,
+            TotalIoBytes = io.Bytes,
+        };
     }
 
     private static TimeSpan ReadTotalProcessorTime(int processId)
@@ -181,6 +217,37 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
             return TimeSpan.Zero;
         }
     }
+
+    private static (ulong Operations, ulong Bytes) ReadIoCounters(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return GetProcessIoCounters(process.SafeHandle, out var counters)
+                ? (counters.ReadOperationCount + counters.WriteOperationCount + counters.OtherOperationCount,
+                    counters.ReadTransferCount + counters.WriteTransferCount + counters.OtherTransferCount)
+                : default;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or SystemException)
+        {
+            return default;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IoCounters
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetProcessIoCounters(SafeProcessHandle processHandle, out IoCounters counters);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct ProcessEntry32

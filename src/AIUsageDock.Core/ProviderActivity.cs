@@ -4,7 +4,9 @@ public readonly record struct ProcessDescriptor(
     int ProcessId,
     int ParentProcessId,
     string Name,
-    TimeSpan TotalProcessorTime = default);
+    TimeSpan TotalProcessorTime = default,
+    ulong TotalIoOperations = 0,
+    ulong TotalIoBytes = 0);
 
 public static class ProviderActivityDetection
 {
@@ -25,6 +27,29 @@ public static class ProviderActivityDetection
                 !ownedProcessIds.Contains(process.ProcessId) &&
                 Path.GetFileNameWithoutExtension(process.Name).Equals(expectedName, StringComparison.OrdinalIgnoreCase))
             .ToArray();
+    }
+
+    public static IReadOnlyList<ProcessDescriptor> FindExternalProviderProcessTrees(
+        ProviderId provider,
+        IReadOnlyCollection<ProcessDescriptor> processes,
+        int monitoringProcessId)
+    {
+        var roots = FindExternalProviderProcesses(provider, processes, monitoringProcessId);
+        var processIds = new HashSet<int>(roots.Select(process => process.ProcessId));
+        var foundNewDescendant = true;
+        while (foundNewDescendant)
+        {
+            foundNewDescendant = false;
+            foreach (var process in processes)
+            {
+                if (processIds.Contains(process.ParentProcessId) && processIds.Add(process.ProcessId))
+                {
+                    foundNewDescendant = true;
+                }
+            }
+        }
+
+        return processes.Where(process => processIds.Contains(process.ProcessId)).ToArray();
     }
 
     private static HashSet<int> FindDescendants(
@@ -51,7 +76,7 @@ public static class ProviderActivityDetection
 
 public sealed class ProviderCpuActivityTracker
 {
-    private readonly Dictionary<int, TimeSpan> _previousCpuTimes = new();
+    private readonly Dictionary<int, (TimeSpan CpuTime, ulong IoOperations, ulong IoBytes)> _previousActivity = new();
     private readonly TimeSpan _activeHoldDuration;
     private readonly TimeSpan _minimumCpuDelta;
     private DateTimeOffset? _lastActivity;
@@ -79,7 +104,7 @@ public sealed class ProviderCpuActivityTracker
         int monitoringProcessId,
         DateTimeOffset observedAt)
     {
-        var externalProcesses = ProviderActivityDetection.FindExternalProviderProcesses(
+        var externalProcesses = ProviderActivityDetection.FindExternalProviderProcessTrees(
             provider,
             processes,
             monitoringProcessId);
@@ -88,20 +113,25 @@ public sealed class ProviderCpuActivityTracker
         foreach (var process in externalProcesses)
         {
             currentProcessIds.Add(process.ProcessId);
-            if (_previousCpuTimes.TryGetValue(process.ProcessId, out var previousCpuTime)
-                ? process.TotalProcessorTime < previousCpuTime ||
-                    process.TotalProcessorTime - previousCpuTime >= _minimumCpuDelta
+            if (_previousActivity.TryGetValue(process.ProcessId, out var previous)
+                ? process.TotalProcessorTime < previous.CpuTime ||
+                    process.TotalProcessorTime - previous.CpuTime >= _minimumCpuDelta ||
+                    process.TotalIoOperations != previous.IoOperations ||
+                    process.TotalIoBytes != previous.IoBytes
                 : _hasObserved)
             {
                 activityObserved = true;
             }
 
-            _previousCpuTimes[process.ProcessId] = process.TotalProcessorTime;
+            _previousActivity[process.ProcessId] = (
+                process.TotalProcessorTime,
+                process.TotalIoOperations,
+                process.TotalIoBytes);
         }
 
-        foreach (var processId in _previousCpuTimes.Keys.Where(processId => !currentProcessIds.Contains(processId)).ToArray())
+        foreach (var processId in _previousActivity.Keys.Where(processId => !currentProcessIds.Contains(processId)).ToArray())
         {
-            _previousCpuTimes.Remove(processId);
+            _previousActivity.Remove(processId);
         }
 
         if (activityObserved)

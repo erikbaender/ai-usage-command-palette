@@ -10,7 +10,7 @@
   <Identity
     Name="Erik.AIUsageDock"
     Publisher="CN=AI Usage Dock"
-    Version="0.1.28.0" />
+    Version="0.1.29.0" />
   <Properties>
     <DisplayName>AI Usage Dock</DisplayName>
     <PublisherDisplayName>AI Usage Dock</PublisherDisplayName>

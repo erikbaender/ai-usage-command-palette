@@ -56,6 +56,7 @@ public static class Program
         using var disposed = new ManualResetEvent(false);
         using var activityMonitor = new ProviderActivityMonitor();
         await using var coordinator = UsageCoordinator.CreateDefault(claudeSessionDetector: activityMonitor);
+        coordinator.SnapshotChanged += activityMonitor.ObserveSnapshot;
         var notificationPreferences = new UsageNotificationPreferences();
         using var provider = new AIUsageDockCommandsProvider(coordinator, notificationPreferences, activityMonitor);
         using var notificationService = new UsageNotificationService(coordinator, notificationPreferences);
@@ -66,5 +67,6 @@ public static class Program
         disposed.WaitOne();
         server.Stop();
         server.UnsafeDispose();
+        coordinator.SnapshotChanged -= activityMonitor.ObserveSnapshot;
     }
 }

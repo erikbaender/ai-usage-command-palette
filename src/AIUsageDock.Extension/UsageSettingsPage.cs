@@ -25,6 +25,7 @@ public sealed class UsageSettingsPage
             "Delay after each usage refresh while Claude Code is running.",
             CreateIntervalChoices(UsagePollingPolicy.Default.RunningSessionInterval)));
         ExtensionSettings.SettingsChanged += OnSettingsChanged;
+        _coordinator.UpdatePollingPolicy(ReadPollingPolicy());
     }
 
     public Settings ExtensionSettings { get; }

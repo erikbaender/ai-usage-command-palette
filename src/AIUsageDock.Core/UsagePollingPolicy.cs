@@ -23,7 +23,7 @@ public sealed record UsagePollingPolicy
     public TimeSpan RunningSessionInterval { get; }
 
     public static UsagePollingPolicy Default { get; } = new(
-        TimeSpan.FromSeconds(60),
+        TimeSpan.FromSeconds(5),
         TimeSpan.FromSeconds(1));
 
     public TimeSpan GetInterval(bool runningSession) =>

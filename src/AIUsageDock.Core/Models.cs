@@ -84,3 +84,17 @@ public static class UsagePercent
 
     public static double? FromNullable(double? value) => value is not null && IsValid(value.Value) ? value : null;
 }
+
+public static class UsageSessionActivity
+{
+    public static bool IsClaudeSessionActive(ProviderSnapshot snapshot, DateTimeOffset now)
+    {
+        if (snapshot.Provider != ProviderId.Claude)
+        {
+            return false;
+        }
+
+        var session = snapshot.GetWindow(UsageWindow.Session);
+        return session?.UsedPercent is > 0 && session.ResetsAt is DateTimeOffset resetAt && resetAt > now;
+    }
+}

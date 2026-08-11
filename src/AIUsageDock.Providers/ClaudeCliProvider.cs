@@ -214,7 +214,9 @@ public sealed class ClaudeProvider : IUsageProvider
         try
         {
             json = await _client.ReadUsageAsync(cancellationToken);
-            var snapshot = UsageJson.ParseClaudeCliUsage(json, _clock.UtcNow);
+            var snapshot = ClaudeUsageSnapshotReconciler.Reconcile(
+                _lastSnapshot,
+                UsageJson.ParseClaudeCliUsage(json, _clock.UtcNow));
             _lastSnapshot = snapshot;
             SnapshotChanged?.Invoke(this, snapshot);
             return snapshot;
@@ -282,5 +284,43 @@ public sealed class ClaudeProvider : IUsageProvider
     {
         SnapshotChanged?.Invoke(this, snapshot);
         return snapshot;
+    }
+}
+
+public static class ClaudeUsageSnapshotReconciler
+{
+    public static ProviderSnapshot Reconcile(ProviderSnapshot? previous, ProviderSnapshot current)
+    {
+        if (previous?.Provider != ProviderId.Claude || current.Provider != ProviderId.Claude)
+        {
+            return current;
+        }
+
+        var windows = current.Windows.Select(window => ReconcileWindow(previous, window)).ToArray();
+        return current with { Windows = windows };
+    }
+
+    private static UsageWindowSnapshot ReconcileWindow(
+        ProviderSnapshot previousSnapshot,
+        UsageWindowSnapshot current)
+    {
+        var previous = previousSnapshot.GetWindow(current.Window);
+        if (previous?.UsedPercent is not double previousUsed ||
+            current.UsedPercent is not double currentUsed ||
+            currentUsed >= previousUsed)
+        {
+            return current;
+        }
+
+        // Claude can briefly return an empty/new-session value while usage is
+        // still being aggregated. A decrease is valid only after the reset
+        // boundary of the prior window has actually passed.
+        if (previous.ResetsAt is DateTimeOffset previousReset &&
+            previousReset <= current.ObservedAt)
+        {
+            return current;
+        }
+
+        return previous;
     }
 }
