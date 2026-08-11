@@ -1,3 +1,4 @@
+using AIUsageDock.Core;
 using Microsoft.Windows.AppLifecycle;
 using Shmuelie.WinRTServer;
 using Shmuelie.WinRTServer.CsWinRT;
@@ -22,9 +23,10 @@ public static class Program
         await using var server = new ComServer();
         using var disposed = new ManualResetEvent(false);
         await using var coordinator = UsageCoordinator.CreateDefault();
+        var notificationPreferences = new UsageNotificationPreferences();
+        using var provider = new AIUsageDockCommandsProvider(coordinator, notificationPreferences);
+        using var notificationService = new UsageNotificationService(coordinator, notificationPreferences);
         coordinator.Start();
-
-        using var provider = new AIUsageDockCommandsProvider(coordinator);
         var extension = new AIUsageDockExtension(disposed, provider);
         server.RegisterClass<AIUsageDockExtension, Microsoft.CommandPalette.Extensions.IExtension>(() => extension);
         server.Start();
