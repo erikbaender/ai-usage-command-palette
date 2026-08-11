@@ -13,6 +13,7 @@ public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisp
     private readonly UsageDockItem _codexWeeklyBand;
     private readonly UsageDockItem _claudeSessionBand;
     private readonly UsageDockItem _claudeWeeklyBand;
+    private readonly UsageSettingsPage _settingsPage;
     private bool _disposed;
 
     public AIUsageDockCommandsProvider(UsageCoordinator coordinator, UsageNotificationPreferences notificationPreferences)
@@ -43,6 +44,8 @@ public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisp
         _codexWeeklyBand = new UsageDockItem(ProviderId.Codex, UsageWindow.Weekly, coordinator);
         _claudeSessionBand = new UsageDockItem(ProviderId.Claude, UsageWindow.Session, coordinator);
         _claudeWeeklyBand = new UsageDockItem(ProviderId.Claude, UsageWindow.Weekly, coordinator);
+        _settingsPage = new UsageSettingsPage(coordinator);
+        Settings = _settingsPage.ExtensionSettings;
     }
 
     public override ICommandItem[] TopLevelCommands() =>

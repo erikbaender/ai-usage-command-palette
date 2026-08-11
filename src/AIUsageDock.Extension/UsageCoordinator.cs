@@ -1,5 +1,6 @@
 using AIUsageDock.Core;
 using AIUsageDock.Providers;
+using System.Diagnostics;
 
 namespace AIUsageDock.Extension;
 
@@ -8,15 +9,21 @@ public sealed class UsageCoordinator : IAsyncDisposable
     private readonly IReadOnlyDictionary<ProviderId, IUsageProvider> _providers;
     private readonly Dictionary<ProviderId, ProviderSnapshot> _snapshots = new();
     private readonly CancellationTokenSource _shutdown = new();
-    private readonly TimeSpan _refreshInterval;
+    private readonly IClaudeSessionDetector _claudeSessionDetector;
+    private readonly SemaphoreSlim _scheduleChanged = new(0, 1);
     private readonly object _gate = new();
+    private UsagePollingPolicy _pollingPolicy;
     private Task? _refreshLoop;
     private bool _disposed;
 
-    private UsageCoordinator(IEnumerable<IUsageProvider> providers, TimeSpan refreshInterval)
+    private UsageCoordinator(
+        IEnumerable<IUsageProvider> providers,
+        UsagePollingPolicy pollingPolicy,
+        IClaudeSessionDetector claudeSessionDetector)
     {
         _providers = providers.ToDictionary(provider => provider.Id);
-        _refreshInterval = refreshInterval;
+        _pollingPolicy = pollingPolicy;
+        _claudeSessionDetector = claudeSessionDetector;
         foreach (var provider in _providers.Values)
         {
             _snapshots[provider.Id] = ProviderSnapshot.Waiting(provider.Id, provider.Id == ProviderId.Claude ? "Claude CLI · claude -p /usage" : "codex app-server", "Waiting for provider data");
@@ -26,12 +33,41 @@ public sealed class UsageCoordinator : IAsyncDisposable
 
     public event EventHandler<ProviderSnapshot>? SnapshotChanged;
 
-    public static UsageCoordinator CreateDefault() => new(
+    public static UsageCoordinator CreateDefault(UsagePollingPolicy? pollingPolicy = null) => new(
         [
             new CodexProvider(),
             new ClaudeProvider(),
         ],
-        TimeSpan.FromSeconds(60));
+        pollingPolicy ?? UsagePollingPolicy.Default,
+        new ClaudeSessionDetector());
+
+    public UsagePollingPolicy PollingPolicy
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _pollingPolicy;
+            }
+        }
+    }
+
+    public void UpdatePollingPolicy(UsagePollingPolicy pollingPolicy)
+    {
+        ArgumentNullException.ThrowIfNull(pollingPolicy);
+        lock (_gate)
+        {
+            _pollingPolicy = pollingPolicy;
+        }
+
+        try
+        {
+            _scheduleChanged.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+        }
+    }
 
     public ProviderSnapshot GetSnapshot(ProviderId provider)
     {
@@ -79,6 +115,7 @@ public sealed class UsageCoordinator : IAsyncDisposable
             await provider.DisposeAsync();
         }
 
+        _scheduleChanged.Dispose();
         _shutdown.Dispose();
     }
 
@@ -89,7 +126,8 @@ public sealed class UsageCoordinator : IAsyncDisposable
             try
             {
                 await RefreshAsync(cancellationToken);
-                await Task.Delay(_refreshInterval, cancellationToken);
+                var interval = PollingPolicy.GetInterval(_claudeSessionDetector.IsSessionRunning());
+                await WaitForNextRefreshAsync(interval, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -102,6 +140,16 @@ public sealed class UsageCoordinator : IAsyncDisposable
         }
     }
 
+    private async Task WaitForNextRefreshAsync(TimeSpan interval, CancellationToken cancellationToken)
+    {
+        using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var delay = Task.Delay(interval, waitCancellation.Token);
+        var settingsChanged = _scheduleChanged.WaitAsync(waitCancellation.Token);
+        var completed = await Task.WhenAny(delay, settingsChanged);
+        waitCancellation.Cancel();
+        await completed;
+    }
+
     private void OnProviderSnapshotChanged(object? sender, ProviderSnapshot snapshot)
     {
         lock (_gate)
@@ -109,5 +157,38 @@ public sealed class UsageCoordinator : IAsyncDisposable
             _snapshots[snapshot.Provider] = snapshot;
         }
         SnapshotChanged?.Invoke(this, snapshot);
+    }
+}
+
+public interface IClaudeSessionDetector
+{
+    bool IsSessionRunning();
+}
+
+public sealed class ClaudeSessionDetector : IClaudeSessionDetector
+{
+    public bool IsSessionRunning()
+    {
+        Process[] processes;
+        try
+        {
+            processes = Process.GetProcessesByName("claude");
+        }
+        catch
+        {
+            return false;
+        }
+
+        try
+        {
+            return processes.Length > 0;
+        }
+        finally
+        {
+            foreach (var process in processes)
+            {
+                process.Dispose();
+            }
+        }
     }
 }

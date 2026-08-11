@@ -21,7 +21,10 @@ public static class UsageJson
         }
 
         var result = Regex.Replace(resultElement.GetString() ?? string.Empty, "\u001b\\[[0-9;]*[A-Za-z]", string.Empty)
-            .Replace('\u00a0', ' ');
+            .Replace('\u00a0', ' ')
+            // Some Claude CLI launches have emitted the UTF-8 bullet as mojibake ("Â·").
+            // Normalize that presentation variant before matching the usage lines.
+            .Replace("\u00c2\u00b7", "\u00b7", StringComparison.Ordinal);
         var windows = new List<UsageWindowSnapshot>();
         foreach (var line in result.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {

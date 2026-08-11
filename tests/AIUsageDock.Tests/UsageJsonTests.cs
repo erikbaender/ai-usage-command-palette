@@ -20,6 +20,18 @@ public sealed class UsageJsonTests
     }
 
     [Fact]
+    public void ParsesClaudeCliUsageWithMojibakeBulletSeparator()
+    {
+        var observed = DateTimeOffset.Parse("2026-08-10T12:00:00Z");
+        var snapshot = UsageJson.ParseClaudeCliUsage(
+            "{\"is_error\":false,\"result\":\"Current session: 10% used \\u00c2\\u00b7 resets Aug 10, 9:50pm (UTC)\\nCurrent week (all models): 59% used \\u00c2\\u00b7 resets Aug 12, 8am (UTC)\"}",
+            observed);
+
+        Assert.Equal(10, snapshot.GetWindow(UsageWindow.Session)!.UsedPercent);
+        Assert.Equal(41, snapshot.GetWindow(UsageWindow.Weekly)!.RemainingPercent);
+    }
+
+    [Fact]
     public void RejectsClaudeCliUsageWithoutRecognizedWindows()
     {
         Assert.Throws<System.Text.Json.JsonException>(() => UsageJson.ParseClaudeCliUsage(
