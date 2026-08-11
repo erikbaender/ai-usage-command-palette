@@ -195,12 +195,17 @@ public static class ClaudeExecutableResolver
 public sealed class ClaudeProvider : IUsageProvider
 {
     private readonly ClaudeCliClient _client;
+    private readonly ClaudeWebUsageClient _webClient;
     private readonly IClock _clock;
     private ProviderSnapshot? _lastSnapshot;
 
-    public ClaudeProvider(ClaudeCliClient? client = null, IClock? clock = null)
+    public ClaudeProvider(
+        ClaudeCliClient? client = null,
+        IClock? clock = null,
+        ClaudeWebUsageClient? webClient = null)
     {
         _client = client ?? new ClaudeCliClient();
+        _webClient = webClient ?? new ClaudeWebUsageClient();
         _clock = clock ?? new SystemClock();
     }
 
@@ -210,6 +215,30 @@ public sealed class ClaudeProvider : IUsageProvider
 
     public async Task<ProviderSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
     {
+        string? webFallbackMessage = null;
+        if (_webClient.IsConfigured)
+        {
+            try
+            {
+                var webJson = await _webClient.ReadUsageAsync(cancellationToken);
+                var webSnapshot = ClaudeUsageSnapshotReconciler.Reconcile(
+                    _lastSnapshot,
+                    UsageJson.ParseClaudeWebUsage(webJson, _clock.UtcNow));
+                _lastSnapshot = webSnapshot;
+                SnapshotChanged?.Invoke(this, webSnapshot);
+                return webSnapshot;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                ClaudeDiagnosticLog.Write($"web-refresh-failure error={exception.GetType().Name}");
+                webFallbackMessage = "Claude web usage unavailable; using the delayed CLI fallback.";
+            }
+        }
+
         string? json = null;
         try
         {
@@ -217,6 +246,10 @@ public sealed class ClaudeProvider : IUsageProvider
             var snapshot = ClaudeUsageSnapshotReconciler.Reconcile(
                 _lastSnapshot,
                 UsageJson.ParseClaudeCliUsage(json, _clock.UtcNow));
+            if (webFallbackMessage is not null)
+            {
+                snapshot = snapshot with { Message = webFallbackMessage };
+            }
             _lastSnapshot = snapshot;
             SnapshotChanged?.Invoke(this, snapshot);
             return snapshot;
@@ -268,7 +301,11 @@ public sealed class ClaudeProvider : IUsageProvider
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        _webClient.Dispose();
+        return ValueTask.CompletedTask;
+    }
 
     private ProviderSnapshot PublishFailure(string message)
     {

@@ -8,7 +8,7 @@ It includes:
 - Compact 5-hour/session and 7-day/weekly used percentages.
 - Expanded details with remaining percentages, reset countdowns, plan/source, freshness, and actionable provider state.
 - A long-lived codex app-server adapter using account/rateLimits/read.
-- Active Claude usage polling through claude -p "/usage" --output-format json.
+- Fresh Claude web-usage polling when the official Claude session variables are configured, with `claude -p "/usage" --output-format json` as a fallback.
 - One-second delay between Claude usage reads while a Claude session is running; the CLI execution time is added to that delay.
 - Provider icons blink between full and half opacity on a one-second cycle while recent Codex or Claude process activity indicates usage is being consumed.
 
@@ -44,7 +44,12 @@ The MSIX is written under src/AIUsageDock.Extension/AppPackages/.
 
 ## Claude setup
 
-The extension does not modify Claude settings or install a helper executable. On each refresh it runs:
+For low-latency usage, set the same session variables supported by Claude Code before starting PowerToys:
+
+    CLAUDE_CODE_SESSION_ACCESS_TOKEN=sk-ant-sid...
+    CLAUDE_CODE_ORGANIZATION_UUID=<organization UUID>
+
+The extension sends that session token only to the matching `https://claude.ai/api/organizations/<organization UUID>/usage` endpoint. It does not discover or copy browser cookies. If the variables are absent or web authentication fails, it falls back to:
 
     claude -p "/usage" --output-format json --no-session-persistence
 

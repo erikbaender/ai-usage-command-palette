@@ -61,6 +61,31 @@ public static class UsageJson
             "Claude CLI · claude -p /usage");
     }
 
+    public static ProviderSnapshot ParseClaudeWebUsage(string json, DateTimeOffset observedAt)
+    {
+        using var document = ParseBounded(json);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            throw new JsonException("Claude web usage response is not an object.");
+        }
+
+        var windows = new List<UsageWindowSnapshot>();
+        AddClaudeWebWindow(root, "five_hour", UsageWindow.Session, observedAt, windows);
+        AddClaudeWebWindow(root, "seven_day", UsageWindow.Weekly, observedAt, windows);
+        if (windows.Count == 0)
+        {
+            throw new JsonException("Claude web usage response contained no recognized usage windows.");
+        }
+
+        return new ProviderSnapshot(
+            ProviderId.Claude,
+            ProviderHealth.Available,
+            windows,
+            observedAt,
+            "Claude web usage");
+    }
+
     public static ProviderSnapshot ParseCodexRateLimits(JsonElement response, DateTimeOffset observedAt)
     {
         var limits = FindObject(response, "rateLimits") ?? response;
@@ -233,6 +258,29 @@ public static class UsageJson
         {
             target[inferredWindow] = candidate;
         }
+    }
+
+    private static void AddClaudeWebWindow(
+        JsonElement root,
+        string propertyName,
+        UsageWindow window,
+        DateTimeOffset observedAt,
+        ICollection<UsageWindowSnapshot> target)
+    {
+        if (!root.TryGetProperty(propertyName, out var element) ||
+            element.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        var utilization = ReadPercentage(element, "utilization");
+        var reset = ReadTimestamp(element, "resets_at");
+        if (utilization is null && reset is null)
+        {
+            return;
+        }
+
+        target.Add(new UsageWindowSnapshot(window, utilization, reset, observedAt));
     }
 
     private static JsonDocument ParseBounded(string json)

@@ -32,6 +32,20 @@ public sealed class UsageJsonTests
     }
 
     [Fact]
+    public void ParsesClaudeWebUsageResponse()
+    {
+        var observed = DateTimeOffset.Parse("2026-08-11T21:00:00Z");
+        var snapshot = UsageJson.ParseClaudeWebUsage(
+            """{"five_hour":{"resets_at":"2026-08-12T01:40:00.462260+00:00","utilization":45},"seven_day":{"resets_at":"2026-08-12T06:00:00.462287+00:00","utilization":75}}""",
+            observed);
+
+        Assert.Equal(45, snapshot.GetWindow(UsageWindow.Session)!.UsedPercent);
+        Assert.Equal(75, snapshot.GetWindow(UsageWindow.Weekly)!.UsedPercent);
+        Assert.Equal(DateTimeOffset.Parse("2026-08-12T01:40:00.462260Z"), snapshot.GetWindow(UsageWindow.Session)!.ResetsAt);
+        Assert.Equal("Claude web usage", snapshot.Source);
+    }
+
+    [Fact]
     public void ParsesClaudeCliSessionWhenResetIsNotReportedAfterReset()
     {
         var observed = DateTimeOffset.Parse("2026-08-11T01:00:00Z");
