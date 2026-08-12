@@ -79,10 +79,14 @@ public sealed class ProviderCpuActivityTracker
     private readonly Dictionary<int, (TimeSpan CpuTime, ulong IoOperations, ulong IoBytes)> _previousActivity = new();
     private readonly TimeSpan _activeHoldDuration;
     private readonly TimeSpan _minimumCpuDelta;
+    private readonly ulong _minimumIoBytesDelta;
     private DateTimeOffset? _lastActivity;
     private bool _hasObserved;
 
-    public ProviderCpuActivityTracker(TimeSpan activeHoldDuration, TimeSpan minimumCpuDelta)
+    public ProviderCpuActivityTracker(
+        TimeSpan activeHoldDuration,
+        TimeSpan minimumCpuDelta,
+        ulong minimumIoBytesDelta = 4096)
     {
         if (activeHoldDuration <= TimeSpan.Zero)
         {
@@ -96,6 +100,7 @@ public sealed class ProviderCpuActivityTracker
 
         _activeHoldDuration = activeHoldDuration;
         _minimumCpuDelta = minimumCpuDelta;
+        _minimumIoBytesDelta = minimumIoBytesDelta;
     }
 
     public bool Observe(
@@ -116,8 +121,8 @@ public sealed class ProviderCpuActivityTracker
             if (_previousActivity.TryGetValue(process.ProcessId, out var previous)
                 ? process.TotalProcessorTime < previous.CpuTime ||
                     process.TotalProcessorTime - previous.CpuTime >= _minimumCpuDelta ||
-                    process.TotalIoOperations != previous.IoOperations ||
-                    process.TotalIoBytes != previous.IoBytes
+                    process.TotalIoBytes < previous.IoBytes ||
+                    process.TotalIoBytes - previous.IoBytes >= _minimumIoBytesDelta
                 : _hasObserved)
             {
                 activityObserved = true;
@@ -143,4 +148,47 @@ public sealed class ProviderCpuActivityTracker
 
         return _lastActivity is not null && observedAt - _lastActivity.Value < _activeHoldDuration;
     }
+}
+
+public sealed class ProviderUsageActivityTracker
+{
+    private readonly Dictionary<ProviderId, ProviderSnapshot> _previousSnapshots = new();
+    private readonly Dictionary<ProviderId, DateTimeOffset> _lastActivity = new();
+    private readonly TimeSpan _activeHoldDuration;
+
+    public ProviderUsageActivityTracker(TimeSpan activeHoldDuration)
+    {
+        if (activeHoldDuration <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(activeHoldDuration), "The activity hold duration must be positive.");
+        }
+
+        _activeHoldDuration = activeHoldDuration;
+    }
+
+    public bool Observe(ProviderSnapshot snapshot, DateTimeOffset observedAt)
+    {
+        if (snapshot.Health == ProviderHealth.Available)
+        {
+            if (_previousSnapshots.TryGetValue(snapshot.Provider, out var previous) &&
+                HasUsageIncreased(previous, snapshot))
+            {
+                _lastActivity[snapshot.Provider] = observedAt;
+            }
+
+            _previousSnapshots[snapshot.Provider] = snapshot;
+        }
+
+        return IsActive(snapshot.Provider, observedAt);
+    }
+
+    public bool IsActive(ProviderId provider, DateTimeOffset observedAt) =>
+        _lastActivity.TryGetValue(provider, out var lastActivity) &&
+        observedAt - lastActivity < _activeHoldDuration;
+
+    private static bool HasUsageIncreased(ProviderSnapshot previous, ProviderSnapshot current) =>
+        current.Windows.Any(window =>
+            window.UsedPercent is double currentUsed &&
+            previous.GetWindow(window.Window)?.UsedPercent is double previousUsed &&
+            currentUsed > previousUsed);
 }

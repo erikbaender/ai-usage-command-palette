@@ -142,10 +142,7 @@ public sealed class UsageCoordinator : IAsyncDisposable
             {
                 await RefreshProviderAsync(providerId, cancellationToken);
                 var sessionRunning = providerId == ProviderId.Claude &&
-                    (_claudeSessionDetector.IsSessionRunning() ||
-                    UsageSessionActivity.IsClaudeSessionActive(
-                        GetSnapshot(ProviderId.Claude),
-                        DateTimeOffset.UtcNow));
+                    _claudeSessionDetector.IsSessionRunning();
                 var interval = PollingPolicy.GetInterval(sessionRunning);
                 await WaitForNextRefreshAsync(
                     interval,

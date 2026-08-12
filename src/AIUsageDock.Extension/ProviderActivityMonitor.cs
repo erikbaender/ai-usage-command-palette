@@ -16,8 +16,8 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
     private readonly TimeSpan _halfPeriod;
     private readonly Task _monitorTask;
     private readonly Dictionary<ProviderId, ProviderCpuActivityTracker> _activityTrackers = new();
+    private readonly ProviderUsageActivityTracker _usageActivityTracker = new(TimeSpan.FromSeconds(5));
     private bool _claudeSessionRunning;
-    private bool _claudeUsageSessionActive;
     private bool _disposed;
 
     public ProviderActivityMonitor(TimeSpan? blinkPeriod = null)
@@ -33,7 +33,7 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
         {
             _states[provider] = new ProviderActivityState(provider, IsActive: false, IsDimmed: false);
             _activityTrackers[provider] = new ProviderCpuActivityTracker(
-                TimeSpan.FromSeconds(10),
+                TimeSpan.FromSeconds(5),
                 TimeSpan.FromMilliseconds(50));
         }
 
@@ -54,22 +54,16 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
     {
         lock (_gate)
         {
-            return _claudeSessionRunning;
+            return _claudeSessionRunning ||
+                _usageActivityTracker.IsActive(ProviderId.Claude, DateTimeOffset.UtcNow);
         }
     }
 
     public void ObserveSnapshot(object? sender, ProviderSnapshot snapshot)
     {
-        if (snapshot.Provider != ProviderId.Claude)
-        {
-            return;
-        }
-
         lock (_gate)
         {
-            _claudeUsageSessionActive = UsageSessionActivity.IsClaudeSessionActive(
-                snapshot,
-                DateTimeOffset.UtcNow);
+            _usageActivityTracker.Observe(snapshot, DateTimeOffset.UtcNow);
         }
     }
 
@@ -123,12 +117,9 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
                     processes,
                     Environment.ProcessId,
                     observedAt);
-                if (provider == ProviderId.Claude)
+                lock (_gate)
                 {
-                    lock (_gate)
-                    {
-                        active |= _claudeUsageSessionActive;
-                    }
+                    active |= _usageActivityTracker.IsActive(provider, observedAt);
                 }
                 Publish(new ProviderActivityState(provider, active, active && dimmed));
             }
@@ -151,6 +142,10 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
             _states[next.Provider] = next;
         }
 
+        if (previous.IsActive != next.IsActive)
+        {
+            ActivityDiagnosticLog.Write(next.Provider, next.IsActive);
+        }
         ActivityChanged?.Invoke(this, next);
     }
 
@@ -276,6 +271,39 @@ public sealed class ProviderActivityMonitor : IClaudeSessionDetector, IDisposabl
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool Process32Next(SafeFileHandle snapshot, ref ProcessEntry32 entry);
+}
+
+internal static class ActivityDiagnosticLog
+{
+    private static readonly object Gate = new();
+
+    public static void Write(ProviderId provider, bool isActive)
+    {
+        try
+        {
+            lock (Gate)
+            {
+                var path = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "AIUsage",
+                    "activity.log");
+                var directory = Path.GetDirectoryName(path)!;
+                Directory.CreateDirectory(directory);
+                if (File.Exists(path) && new FileInfo(path).Length > 64 * 1024)
+                {
+                    File.WriteAllText(path, string.Empty);
+                }
+
+                File.AppendAllText(
+                    path,
+                    $"{DateTimeOffset.UtcNow:O} provider={provider} active={isActive}{Environment.NewLine}");
+            }
+        }
+        catch
+        {
+            // Activity diagnostics must not affect the monitor loop.
+        }
+    }
 }
 
 public sealed record ProviderActivityState(ProviderId Provider, bool IsActive, bool IsDimmed);

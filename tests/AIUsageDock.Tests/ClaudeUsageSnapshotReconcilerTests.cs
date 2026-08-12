@@ -32,19 +32,6 @@ public sealed class ClaudeUsageSnapshotReconcilerTests
         Assert.Null(reconciled.GetWindow(UsageWindow.Session)!.ResetsAt);
     }
 
-    [Fact]
-    public void DetectsActiveClaudeWindowWithoutLocalProcess()
-    {
-        var observed = DateTimeOffset.Parse("2026-08-11T20:00:00Z");
-
-        Assert.True(UsageSessionActivity.IsClaudeSessionActive(
-            Snapshot(6, observed.AddHours(5), observed),
-            observed));
-        Assert.False(UsageSessionActivity.IsClaudeSessionActive(
-            Snapshot(0, null, observed),
-            observed));
-    }
-
     private static ProviderSnapshot Snapshot(
         double used,
         DateTimeOffset? reset,
