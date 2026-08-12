@@ -61,6 +61,40 @@ public sealed class UsageNotificationScenarioTests
     }
 
     [Fact]
+    public void PassedResetTimestampWithoutFreshUsageDoesNotShowResetNotification()
+    {
+        var firstObservedAt = DateTimeOffset.Parse("2026-08-10T21:49:59Z");
+        var secondObservedAt = firstObservedAt.AddSeconds(2);
+        var resetAt = DateTimeOffset.Parse("2026-08-10T21:50:00Z");
+        var previous = Snapshot(100, resetAt, firstObservedAt);
+        var unchanged = Snapshot(100, resetAt, secondObservedAt);
+        var sink = new RecordingNotificationSink();
+        var tracker = new UsageNotificationTracker(new UsageNotificationPreferences(), sink);
+
+        tracker.Observe(previous, firstObservedAt);
+        tracker.Observe(unchanged, secondObservedAt);
+
+        Assert.Empty(sink.Shown);
+    }
+
+    [Fact]
+    public void ResetTimestampJitterDoesNotShowResetNotification()
+    {
+        var firstObservedAt = DateTimeOffset.Parse("2026-08-10T21:49:59Z");
+        var secondObservedAt = firstObservedAt.AddSeconds(2);
+        var resetAt = DateTimeOffset.Parse("2026-08-10T21:50:00Z");
+        var previous = Snapshot(100, resetAt, firstObservedAt);
+        var jittered = Snapshot(100, resetAt.AddMilliseconds(750), secondObservedAt);
+        var sink = new RecordingNotificationSink();
+        var tracker = new UsageNotificationTracker(new UsageNotificationPreferences(), sink);
+
+        tracker.Observe(previous, firstObservedAt);
+        tracker.Observe(jittered, secondObservedAt);
+
+        Assert.Empty(sink.Shown);
+    }
+
+    [Fact]
     public void DisabledThresholdPreferenceDoesNotShowNotificationForARealCrossing()
     {
         var firstObservedAt = DateTimeOffset.Parse("2026-08-11T10:00:00Z");
@@ -108,6 +142,14 @@ public sealed class UsageNotificationScenarioTests
         using var document = JsonDocument.Parse(json);
         return UsageJson.ParseCodexRateLimits(document.RootElement, observedAt);
     }
+
+    private static ProviderSnapshot Snapshot(double used, DateTimeOffset resetAt, DateTimeOffset observedAt) =>
+        new(
+            ProviderId.Claude,
+            ProviderHealth.Available,
+            [new UsageWindowSnapshot(UsageWindow.Session, used, resetAt, observedAt)],
+            observedAt,
+            "test");
 
     // Shape captured from codex-cli 0.147.0 account/rateLimits/read. Current accounts can
     // report a weekly-only primary bucket and a null secondary bucket.

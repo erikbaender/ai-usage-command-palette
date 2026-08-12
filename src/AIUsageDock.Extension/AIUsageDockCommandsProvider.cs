@@ -1,4 +1,5 @@
 using AIUsageDock.Core;
+using AIUsageDock.Providers;
 using Microsoft.CommandPalette.Extensions;
 using Microsoft.CommandPalette.Extensions.Toolkit;
 
@@ -9,6 +10,9 @@ public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisp
     private readonly UsageCoordinator _coordinator;
     private readonly Settings _settings;
     private readonly UsageNotificationPreferences _notificationPreferences;
+    private readonly UsageBackendPreferences _backendPreferences;
+    private readonly CodexWebViewUsageClient _codexWebSession;
+    private readonly ClaudeWebViewUsageClient _claudeWebSession;
     private readonly UsageDockItem _codexSessionBand;
     private readonly UsageDockItem _codexWeeklyBand;
     private readonly UsageDockItem _claudeSessionBand;
@@ -19,11 +23,17 @@ public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisp
     public AIUsageDockCommandsProvider(
         UsageCoordinator coordinator,
         UsageNotificationPreferences notificationPreferences,
-        ProviderActivityMonitor activityMonitor)
+        UsageBackendPreferences backendPreferences,
+        ProviderActivityMonitor activityMonitor,
+        ClaudeWebViewUsageClient claudeWebSession,
+        CodexWebViewUsageClient codexWebSession)
     {
         _coordinator = coordinator;
         _notificationPreferences = notificationPreferences;
-        _settingsPage = new UsageSettingsPage(coordinator);
+        _backendPreferences = backendPreferences;
+        _claudeWebSession = claudeWebSession;
+        _codexWebSession = codexWebSession;
+        _settingsPage = new UsageSettingsPage(coordinator, activityMonitor);
         _settings = _settingsPage.ExtensionSettings;
         Settings = _settings;
         DisplayName = "AI Usage Dock";
@@ -43,6 +53,16 @@ public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisp
             "Remaining usage threshold (%)",
             "Notify when remaining usage passes below this percentage. Enter a value from 0 to 100.",
             "50"));
+        _settings.Add(new ChoiceSetSetting(
+            "codexUsageBackend",
+            "Codex usage backend",
+            "Web uses the live ChatGPT session and falls back to the CLI only when login is unavailable.",
+            CreateBackendChoices()));
+        _settings.Add(new ChoiceSetSetting(
+            "claudeUsageBackend",
+            "Claude usage backend",
+            "Web uses the live Claude session and falls back to the CLI only when login is unavailable.",
+            CreateBackendChoices()));
         _settings.SettingsChanged += OnSettingsChanged;
         ApplySettings();
         _codexSessionBand = new UsageDockItem(ProviderId.Codex, UsageWindow.Session, coordinator, activityMonitor);
@@ -56,6 +76,8 @@ public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisp
     [
         new CommandItem(new UsageDetailsPage(ProviderId.Codex, _coordinator)) { Title = "Codex usage" },
         new CommandItem(new UsageDetailsPage(ProviderId.Claude, _coordinator)) { Title = "Claude usage" },
+        new CommandItem(new ConnectWebUsageCommand(_codexWebSession)) { Title = "Connect Codex web usage" },
+        new CommandItem(new ConnectWebUsageCommand(_claudeWebSession)) { Title = "Connect Claude web usage" },
     ];
 
     public override ICommandItem[]? GetDockBands() =>
@@ -88,5 +110,18 @@ public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisp
         _notificationPreferences.ResetNotificationsEnabled = _settings.GetSetting<bool>("resetNotifications");
         _notificationPreferences.ThresholdNotificationsEnabled = _settings.GetSetting<bool>("thresholdNotifications");
         _notificationPreferences.RemainingUsageThreshold = UsageNotificationPreferences.ParseRemainingUsageThreshold(_settings.GetSetting<string>("remainingUsageThreshold"));
+        _backendPreferences.Set(ProviderId.Codex, ParseBackendPreference(_settings.GetSetting<string>("codexUsageBackend")));
+        _backendPreferences.Set(ProviderId.Claude, ParseBackendPreference(_settings.GetSetting<string>("claudeUsageBackend")));
     }
+
+    private static List<ChoiceSetSetting.Choice> CreateBackendChoices() =>
+    [
+        new ChoiceSetSetting.Choice("Web (recommended)", "web"),
+        new ChoiceSetSetting.Choice("CLI", "cli"),
+    ];
+
+    private static UsageBackendPreference ParseBackendPreference(string? value) =>
+        value?.Equals("cli", StringComparison.OrdinalIgnoreCase) == true
+            ? UsageBackendPreference.Cli
+            : UsageBackendPreference.WebFirst;
 }

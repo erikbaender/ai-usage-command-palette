@@ -1,116 +1,59 @@
 namespace AIUsageDock.Core;
 
-public readonly record struct ProcessDescriptor(
-    int ProcessId,
-    int ParentProcessId,
-    string Name,
-    TimeSpan TotalProcessorTime = default);
-
-public static class ProviderActivityDetection
+public sealed class ProviderUsageActivityTracker
 {
-    public static bool IsActive(
-        ProviderId provider,
-        IReadOnlyCollection<ProcessDescriptor> processes,
-        int monitoringProcessId)
-        => FindExternalProviderProcesses(provider, processes, monitoringProcessId).Count > 0;
+    public static TimeSpan DefaultActiveHoldDuration { get; } = TimeSpan.FromMinutes(1);
 
-    public static IReadOnlyList<ProcessDescriptor> FindExternalProviderProcesses(
-        ProviderId provider,
-        IReadOnlyCollection<ProcessDescriptor> processes,
-        int monitoringProcessId)
-    {
-        var ownedProcessIds = FindDescendants(processes, monitoringProcessId);
-        var expectedName = provider == ProviderId.Codex ? "codex" : "claude";
-        return processes.Where(process =>
-                !ownedProcessIds.Contains(process.ProcessId) &&
-                Path.GetFileNameWithoutExtension(process.Name).Equals(expectedName, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-    }
+    private readonly Dictionary<ProviderId, ProviderSnapshot> _previousSnapshots = new();
+    private readonly Dictionary<ProviderId, DateTimeOffset> _lastActivity = new();
+    private TimeSpan _activeHoldDuration;
 
-    private static HashSet<int> FindDescendants(
-        IReadOnlyCollection<ProcessDescriptor> processes,
-        int parentProcessId)
+    public ProviderUsageActivityTracker(TimeSpan? activeHoldDuration = null)
     {
-        var descendants = new HashSet<int> { parentProcessId };
-        var foundNewDescendant = true;
-        while (foundNewDescendant)
+        activeHoldDuration ??= DefaultActiveHoldDuration;
+        if (activeHoldDuration <= TimeSpan.Zero)
         {
-            foundNewDescendant = false;
-            foreach (var process in processes)
-            {
-                if (descendants.Contains(process.ParentProcessId) && descendants.Add(process.ProcessId))
-                {
-                    foundNewDescendant = true;
-                }
-            }
+            throw new ArgumentOutOfRangeException(nameof(activeHoldDuration), "The activity hold duration must be positive.");
         }
 
-        return descendants;
+        _activeHoldDuration = activeHoldDuration.Value;
     }
-}
 
-public sealed class ProviderCpuActivityTracker
-{
-    private readonly Dictionary<int, TimeSpan> _previousCpuTimes = new();
-    private readonly TimeSpan _activeHoldDuration;
-    private readonly TimeSpan _minimumCpuDelta;
-    private DateTimeOffset? _lastActivity;
-    private bool _hasObserved;
+    public TimeSpan ActiveHoldDuration => _activeHoldDuration;
 
-    public ProviderCpuActivityTracker(TimeSpan activeHoldDuration, TimeSpan minimumCpuDelta)
+    public void UpdateActiveHoldDuration(TimeSpan activeHoldDuration)
     {
         if (activeHoldDuration <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(activeHoldDuration), "The activity hold duration must be positive.");
         }
 
-        if (minimumCpuDelta <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(minimumCpuDelta), "The minimum CPU delta must be positive.");
-        }
-
         _activeHoldDuration = activeHoldDuration;
-        _minimumCpuDelta = minimumCpuDelta;
     }
 
-    public bool Observe(
-        ProviderId provider,
-        IReadOnlyCollection<ProcessDescriptor> processes,
-        int monitoringProcessId,
-        DateTimeOffset observedAt)
+    public bool Observe(ProviderSnapshot snapshot, DateTimeOffset observedAt)
     {
-        var externalProcesses = ProviderActivityDetection.FindExternalProviderProcesses(
-            provider,
-            processes,
-            monitoringProcessId);
-        var currentProcessIds = new HashSet<int>();
-        var activityObserved = false;
-        foreach (var process in externalProcesses)
+        if (snapshot.Health == ProviderHealth.Available)
         {
-            currentProcessIds.Add(process.ProcessId);
-            if (_previousCpuTimes.TryGetValue(process.ProcessId, out var previousCpuTime)
-                ? process.TotalProcessorTime < previousCpuTime ||
-                    process.TotalProcessorTime - previousCpuTime >= _minimumCpuDelta
-                : _hasObserved)
+            if (_previousSnapshots.TryGetValue(snapshot.Provider, out var previous) &&
+                HasUsageIncreased(previous, snapshot))
             {
-                activityObserved = true;
+                _lastActivity[snapshot.Provider] = observedAt;
             }
 
-            _previousCpuTimes[process.ProcessId] = process.TotalProcessorTime;
+            _previousSnapshots[snapshot.Provider] = snapshot;
         }
 
-        foreach (var processId in _previousCpuTimes.Keys.Where(processId => !currentProcessIds.Contains(processId)).ToArray())
-        {
-            _previousCpuTimes.Remove(processId);
-        }
-
-        if (activityObserved)
-        {
-            _lastActivity = observedAt;
-        }
-
-        _hasObserved = true;
-
-        return _lastActivity is not null && observedAt - _lastActivity.Value < _activeHoldDuration;
+        return IsActive(snapshot.Provider, observedAt);
     }
+
+    public bool IsActive(ProviderId provider, DateTimeOffset observedAt) =>
+        _lastActivity.TryGetValue(provider, out var lastActivity) &&
+        observedAt - lastActivity < _activeHoldDuration;
+
+    private static bool HasUsageIncreased(ProviderSnapshot previous, ProviderSnapshot current) =>
+        current.Windows.Any(window =>
+            window.UsedPercent is double currentUsed &&
+            previous.GetWindow(window.Window)?.UsedPercent is double previousUsed &&
+            currentUsed > previousUsed);
 }

@@ -100,3 +100,21 @@ public sealed partial class RefreshUsageCommand : InvokableCommand
         return CommandResult.KeepOpen();
     }
 }
+
+public sealed partial class ConnectWebUsageCommand : InvokableCommand
+{
+    private readonly IWebUsageSession _webSession;
+
+    public ConnectWebUsageCommand(IWebUsageSession webSession)
+    {
+        _webSession = webSession;
+        Name = $"Connect {webSession.Provider} web usage";
+        Icon = new IconInfo("\uE77B");
+    }
+
+    public override CommandResult Invoke()
+    {
+        _webSession.ShowConnectionWindow();
+        return CommandResult.KeepOpen();
+    }
+}

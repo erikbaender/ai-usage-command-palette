@@ -109,8 +109,12 @@ public static class UsageNotificationDetector
             return false;
         }
 
-        return current.ObservedAt >= previousReset ||
-            current.ResetsAt is DateTimeOffset currentReset && currentReset > previousReset;
+        var resetTimeAdvanced = current.ResetsAt is DateTimeOffset currentReset &&
+            currentReset - previousReset > TimeSpan.FromMinutes(1);
+        var usageDropped = previous.UsedPercent is double previousUsed &&
+            current.UsedPercent is double currentUsed &&
+            currentUsed < previousUsed;
+        return resetTimeAdvanced || usageDropped;
     }
 }
 

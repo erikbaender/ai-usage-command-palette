@@ -7,14 +7,15 @@ It includes:
 - Four independently pinnable Dock bands for Codex/Claude Session and Weekly usage.
 - Compact 5-hour/session and 7-day/weekly used percentages.
 - Expanded details with remaining percentages, reset countdowns, plan/source, freshness, and actionable provider state.
-- A long-lived codex app-server adapter using account/rateLimits/read.
-- Active Claude usage polling through claude -p "/usage" --output-format json.
-- One-second delay between Claude usage reads while a Claude session is running; the CLI execution time is added to that delay.
-- Provider icons blink between full and half opacity on a one-second cycle while recent Codex or Claude process activity indicates usage is being consumed.
+- Fresh Codex and Claude web-usage polling through independent persistent embedded browser sessions.
+- Per-provider backend settings: Web-first (default) or CLI.
+- Web-first falls back to the corresponding CLI only when the browser session is not authenticated; transient web failures keep the last web snapshot instead of mixing in delayed CLI data.
+- One-second delay between usage reads while provider usage is actively changing.
+- Provider icons blink between full and half opacity after usage snapshots show that metered usage increased; the expiration is configurable and defaults to one minute.
 
 ## MVP
 
-- Reuse installed CLI authentication. The extension does not read browser cookies, provider token files, API keys, or undocumented web endpoints.
+- Browser authentication remains inside dedicated WebView2 profiles. The extension does not export cookie values, read provider token files, or ask for API keys.
 - Keep unknown, stale, unauthenticated, missing, and malformed states explicit; never display fabricated zeroes.
 
 See docs/SETUP.md for build/install instructions and docs/MANUAL-VALIDATION.md for the manual test matrix.
@@ -22,7 +23,7 @@ See docs/SETUP.md for build/install instructions and docs/MANUAL-VALIDATION.md f
 ## Projects
 
 - src/AIUsageDock.Core — normalized model, parsing, freshness, and formatting.
-- src/AIUsageDock.Providers — Codex app-server lifecycle and active Claude CLI provider.
+- src/AIUsageDock.Providers — web/CLI routing, Codex app-server lifecycle, provider parsers, and Claude CLI fallback.
 - src/AIUsageDock.Extension — packaged WinRT/COM Command Palette extension and Dock UI.
 - tests/AIUsageDock.Tests — provider parsers, CLI-process behavior, and usage formatting tests.
 
@@ -42,10 +43,13 @@ The tested build uses:
 
 The MSIX is written under src/AIUsageDock.Extension/AppPackages/.
 
-## Claude setup
+## Web setup
 
-The extension does not modify Claude settings or install a helper executable. On each refresh it runs:
+Run **Connect Codex web usage** and **Connect Claude web usage** from Command Palette, then sign in inside each dedicated window. After a successful usage response, the window closes automatically and Windows shows a confirmation notification. The packaged app keeps each WebView profile in its user-local data so the providers can rotate their own session cookies. Cookie values are never exported into extension settings, environment variables, or diagnostic logs.
 
+Web-first is the default for each provider. Choose **CLI** independently under the Codex or Claude usage-backend setting when CLI data is preferred. When a Web-first session is signed out or expired, the extension can fall back to:
+
+    codex app-server
     claude -p "/usage" --output-format json --no-session-persistence
 
-Ensure claude.exe is available on the PATH visible to PowerToys. If it is installed elsewhere, set AI_USAGE_CLAUDE_PATH to the executable path before starting PowerToys.
+Neither CLI is required while its web session is authenticated. For CLI use, ensure the executable is on the PATH visible to PowerToys; AI_USAGE_CODEX_PATH and AI_USAGE_CLAUDE_PATH can point to explicit executable paths.

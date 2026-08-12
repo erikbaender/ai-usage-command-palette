@@ -4,11 +4,11 @@
 Command Palette extension
   ├─ DockController
   ├─ UsageCoordinator
-  │    ├─ CodexProvider ── codex app-server (stdio JSONL)
-  │    │                    └─ account/rateLimits/read + update notification
-    │    └─ ClaudeProvider ── claude -p "/usage" (JSON)
-    │                         └─ authenticated CLI output
-    └─ DetailView / formatting
+  │    ├─ CodexProvider ── persistent ChatGPT WebView2 session
+  │    │                    └─ codex app-server fallback / CLI selection
+  │    └─ ClaudeProvider ── persistent Claude WebView2 session
+  │                         └─ claude -p "/usage" fallback / CLI selection
+  └─ DetailView / formatting
 ```
 
 ## Provider contract
@@ -51,6 +51,9 @@ Use `double?` or decimal-like validation internally; clamp only values that are 
 
 ## Codex adapter
 
+- Default to the isolated ChatGPT WebView2 profile and fetch the usage resource in page context so cookies never leave the browser profile.
+- Fall back to the app-server only for an absent or expired web login. A transient web failure retains stale web data rather than mixing sources.
+
 - Resolve `codex` using a configured path or PATH lookup; never assume a fixed install directory.
 - Start `codex app-server` with redirected stdin/stdout/stderr and no shell interpretation.
 - Perform the protocol initialize handshake and retain request IDs.
@@ -62,11 +65,14 @@ Use `double?` or decimal-like validation internally; clamp only values that are 
 
 ## Claude CLI adapter
 
+- Default to the isolated Claude WebView2 profile and fetch the discovered organization usage resource in page context.
+- Fall back to the CLI only for an absent or expired web login. A transient web failure retains stale web data rather than mixing sources.
+
 - Resolve `claude.exe` from `AI_USAGE_CLAUDE_PATH`, PATH, and the per-user `.local\bin` fallback.
 - Start `claude -p "/usage" --output-format json --no-session-persistence` with redirected UTF-8 stdout/stderr.
 - Parse the JSON result for session and weekly percentages plus timezone-aware reset dates.
 - Bound each request and retain the last successful snapshot as stale when a refresh fails.
-- Do not modify Claude settings, read provider credentials, scrape browser data, or install a helper executable.
+- Do not modify Claude settings, export browser credentials, read provider token files, or install a helper executable.
 - Write bounded, sanitized diagnostics to the packaged app's user-local log when the CLI fails or returns unrecognized output.
 
 ## Refresh and freshness
