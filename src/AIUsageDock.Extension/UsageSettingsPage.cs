@@ -6,7 +6,8 @@ namespace AIUsageDock.Extension;
 public sealed class UsageSettingsPage
 {
     public const string IdleIntervalKey = "idlePollingInterval";
-    public const string RunningSessionIntervalKey = "runningSessionPollingInterval";
+    // Keep the persisted key stable so existing user settings survive the semantic rename.
+    public const string ActiveUsageIntervalKey = "runningSessionPollingInterval";
 
     private readonly UsageCoordinator _coordinator;
 
@@ -17,13 +18,13 @@ public sealed class UsageSettingsPage
         ExtensionSettings.Add(new ChoiceSetSetting(
             IdleIntervalKey,
             "Idle polling interval",
-            "How often to refresh usage when no Claude session is running.",
+            "How often to check for provider usage changes.",
             CreateIntervalChoices(UsagePollingPolicy.Default.IdleInterval)));
         ExtensionSettings.Add(new ChoiceSetSetting(
-            RunningSessionIntervalKey,
-            "Running-session polling interval",
-            "Delay after each usage refresh while Claude Code is running.",
-            CreateIntervalChoices(UsagePollingPolicy.Default.RunningSessionInterval)));
+            ActiveUsageIntervalKey,
+            "Active usage polling interval",
+            "Delay after each usage refresh while provider usage is changing.",
+            CreateIntervalChoices(UsagePollingPolicy.Default.ActiveUsageInterval)));
         ExtensionSettings.SettingsChanged += OnSettingsChanged;
         _coordinator.UpdatePollingPolicy(ReadPollingPolicy());
     }
@@ -35,7 +36,7 @@ public sealed class UsageSettingsPage
 
     private UsagePollingPolicy ReadPollingPolicy() => new(
         ParseInterval(ExtensionSettings.GetSetting<string>(IdleIntervalKey), UsagePollingPolicy.Default.IdleInterval),
-        ParseInterval(ExtensionSettings.GetSetting<string>(RunningSessionIntervalKey), UsagePollingPolicy.Default.RunningSessionInterval));
+        ParseInterval(ExtensionSettings.GetSetting<string>(ActiveUsageIntervalKey), UsagePollingPolicy.Default.ActiveUsageInterval));
 
     private static TimeSpan ParseInterval(string? value, TimeSpan fallback) =>
         int.TryParse(value, out var seconds) && seconds > 0

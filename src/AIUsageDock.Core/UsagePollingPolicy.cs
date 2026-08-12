@@ -2,30 +2,30 @@ namespace AIUsageDock.Core;
 
 public sealed record UsagePollingPolicy
 {
-    public UsagePollingPolicy(TimeSpan idleInterval, TimeSpan runningSessionInterval)
+    public UsagePollingPolicy(TimeSpan idleInterval, TimeSpan activeUsageInterval)
     {
         if (idleInterval <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(idleInterval), "The idle polling interval must be positive.");
         }
 
-        if (runningSessionInterval <= TimeSpan.Zero)
+        if (activeUsageInterval <= TimeSpan.Zero)
         {
-            throw new ArgumentOutOfRangeException(nameof(runningSessionInterval), "The running-session polling interval must be positive.");
+            throw new ArgumentOutOfRangeException(nameof(activeUsageInterval), "The active-usage polling interval must be positive.");
         }
 
         IdleInterval = idleInterval;
-        RunningSessionInterval = runningSessionInterval;
+        ActiveUsageInterval = activeUsageInterval;
     }
 
     public TimeSpan IdleInterval { get; }
 
-    public TimeSpan RunningSessionInterval { get; }
+    public TimeSpan ActiveUsageInterval { get; }
 
     public static UsagePollingPolicy Default { get; } = new(
         TimeSpan.FromSeconds(5),
         TimeSpan.FromSeconds(1));
 
-    public TimeSpan GetInterval(bool runningSession) =>
-        runningSession ? RunningSessionInterval : IdleInterval;
+    public TimeSpan GetInterval(bool usageActive) =>
+        usageActive ? ActiveUsageInterval : IdleInterval;
 }

@@ -60,7 +60,7 @@ public static class Program
         using var codexWebSession = new CodexWebViewUsageClient();
         var backendPreferences = new AIUsageDock.Providers.UsageBackendPreferences();
         await using var coordinator = UsageCoordinator.CreateDefault(
-            claudeSessionDetector: activityMonitor,
+            activityDetector: activityMonitor,
             claudeWebUsageClient: claudeWebSession,
             codexWebUsageClient: codexWebSession,
             backendPreferences: backendPreferences);

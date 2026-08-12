@@ -5,12 +5,12 @@ namespace AIUsageDock.Tests;
 public sealed class UsagePollingPolicyTests
 {
     [Fact]
-    public void DefaultsToFiveSecondsIdleAndOneSecondDuringRunningSession()
+    public void DefaultsToFiveSecondsIdleAndOneSecondDuringActiveUsage()
     {
         var policy = UsagePollingPolicy.Default;
 
-        Assert.Equal(TimeSpan.FromSeconds(5), policy.GetInterval(runningSession: false));
-        Assert.Equal(TimeSpan.FromSeconds(1), policy.GetInterval(runningSession: true));
+        Assert.Equal(TimeSpan.FromSeconds(5), policy.GetInterval(usageActive: false));
+        Assert.Equal(TimeSpan.FromSeconds(1), policy.GetInterval(usageActive: true));
     }
 
     [Fact]
@@ -18,8 +18,8 @@ public sealed class UsagePollingPolicyTests
     {
         var policy = new UsagePollingPolicy(TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(15));
 
-        Assert.Equal(TimeSpan.FromMinutes(5), policy.GetInterval(runningSession: false));
-        Assert.Equal(TimeSpan.FromSeconds(15), policy.GetInterval(runningSession: true));
+        Assert.Equal(TimeSpan.FromMinutes(5), policy.GetInterval(usageActive: false));
+        Assert.Equal(TimeSpan.FromSeconds(15), policy.GetInterval(usageActive: true));
     }
 
     [Fact]

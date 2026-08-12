@@ -1,6 +1,5 @@
 using AIUsageDock.Core;
 using AIUsageDock.Providers;
-using System.Diagnostics;
 
 namespace AIUsageDock.Extension;
 
@@ -9,7 +8,7 @@ public sealed class UsageCoordinator : IAsyncDisposable
     private readonly IReadOnlyDictionary<ProviderId, IUsageProvider> _providers;
     private readonly Dictionary<ProviderId, ProviderSnapshot> _snapshots = new();
     private readonly CancellationTokenSource _shutdown = new();
-    private readonly IClaudeSessionDetector _claudeSessionDetector;
+    private readonly IProviderActivityDetector _activityDetector;
     private readonly SemaphoreSlim _scheduleChanged = new(0, 1);
     private readonly object _gate = new();
     private UsagePollingPolicy _pollingPolicy;
@@ -19,11 +18,11 @@ public sealed class UsageCoordinator : IAsyncDisposable
     private UsageCoordinator(
         IEnumerable<IUsageProvider> providers,
         UsagePollingPolicy pollingPolicy,
-        IClaudeSessionDetector claudeSessionDetector)
+        IProviderActivityDetector activityDetector)
     {
         _providers = providers.ToDictionary(provider => provider.Id);
         _pollingPolicy = pollingPolicy;
-        _claudeSessionDetector = claudeSessionDetector;
+        _activityDetector = activityDetector;
         foreach (var provider in _providers.Values)
         {
             _snapshots[provider.Id] = ProviderSnapshot.Waiting(
@@ -38,7 +37,7 @@ public sealed class UsageCoordinator : IAsyncDisposable
 
     public static UsageCoordinator CreateDefault(
         UsagePollingPolicy? pollingPolicy = null,
-        IClaudeSessionDetector? claudeSessionDetector = null,
+        IProviderActivityDetector? activityDetector = null,
         IClaudeWebUsageClient? claudeWebUsageClient = null,
         ICodexWebUsageClient? codexWebUsageClient = null,
         UsageBackendPreferences? backendPreferences = null)
@@ -50,7 +49,7 @@ public sealed class UsageCoordinator : IAsyncDisposable
             new ClaudeProvider(webClient: claudeWebUsageClient, backendPreferences: preferences),
         ],
         pollingPolicy ?? UsagePollingPolicy.Default,
-        claudeSessionDetector ?? new ClaudeSessionDetector());
+        activityDetector ?? new InactiveProviderActivityDetector());
     }
 
     public UsagePollingPolicy PollingPolicy
@@ -141,13 +140,9 @@ public sealed class UsageCoordinator : IAsyncDisposable
             try
             {
                 await RefreshProviderAsync(providerId, cancellationToken);
-                var sessionRunning = providerId == ProviderId.Claude &&
-                    _claudeSessionDetector.IsSessionRunning();
-                var interval = PollingPolicy.GetInterval(sessionRunning);
-                await WaitForNextRefreshAsync(
-                    interval,
-                    watchForSessionStart: providerId == ProviderId.Claude && !sessionRunning,
-                    cancellationToken);
+                var usageActive = _activityDetector.IsActive(providerId);
+                var interval = PollingPolicy.GetInterval(usageActive);
+                await WaitForNextRefreshAsync(interval, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -162,30 +157,14 @@ public sealed class UsageCoordinator : IAsyncDisposable
 
     private async Task WaitForNextRefreshAsync(
         TimeSpan interval,
-        bool watchForSessionStart,
         CancellationToken cancellationToken)
     {
         using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var delay = Task.Delay(interval, waitCancellation.Token);
         var settingsChanged = _scheduleChanged.WaitAsync(waitCancellation.Token);
-        var sessionStarted = watchForSessionStart
-            ? WaitForClaudeSessionStartAsync(waitCancellation.Token)
-            : Task.Delay(Timeout.InfiniteTimeSpan, waitCancellation.Token);
-        var completed = await Task.WhenAny(delay, settingsChanged, sessionStarted);
+        var completed = await Task.WhenAny(delay, settingsChanged);
         waitCancellation.Cancel();
         await completed;
-    }
-
-    private async Task WaitForClaudeSessionStartAsync(CancellationToken cancellationToken)
-    {
-        while (true)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
-            if (_claudeSessionDetector.IsSessionRunning())
-            {
-                return;
-            }
-        }
     }
 
     private void OnProviderSnapshotChanged(object? sender, ProviderSnapshot snapshot)
@@ -198,35 +177,12 @@ public sealed class UsageCoordinator : IAsyncDisposable
     }
 }
 
-public interface IClaudeSessionDetector
+public interface IProviderActivityDetector
 {
-    bool IsSessionRunning();
+    bool IsActive(ProviderId provider);
 }
 
-public sealed class ClaudeSessionDetector : IClaudeSessionDetector
+public sealed class InactiveProviderActivityDetector : IProviderActivityDetector
 {
-    public bool IsSessionRunning()
-    {
-        Process[] processes;
-        try
-        {
-            processes = Process.GetProcessesByName("claude");
-        }
-        catch
-        {
-            return false;
-        }
-
-        try
-        {
-            return processes.Length > 0;
-        }
-        finally
-        {
-            foreach (var process in processes)
-            {
-                process.Dispose();
-            }
-        }
-    }
+    public bool IsActive(ProviderId provider) => false;
 }
