@@ -110,7 +110,7 @@ public static class UsageNotificationDetector
         }
 
         var resetTimeAdvanced = current.ResetsAt is DateTimeOffset currentReset &&
-            currentReset > previousReset;
+            currentReset - previousReset > TimeSpan.FromMinutes(1);
         var usageDropped = previous.UsedPercent is double previousUsed &&
             current.UsedPercent is double currentUsed &&
             currentUsed < previousUsed;

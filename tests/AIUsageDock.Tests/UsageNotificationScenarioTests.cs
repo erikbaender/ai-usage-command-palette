@@ -78,6 +78,23 @@ public sealed class UsageNotificationScenarioTests
     }
 
     [Fact]
+    public void ResetTimestampJitterDoesNotShowResetNotification()
+    {
+        var firstObservedAt = DateTimeOffset.Parse("2026-08-10T21:49:59Z");
+        var secondObservedAt = firstObservedAt.AddSeconds(2);
+        var resetAt = DateTimeOffset.Parse("2026-08-10T21:50:00Z");
+        var previous = Snapshot(100, resetAt, firstObservedAt);
+        var jittered = Snapshot(100, resetAt.AddMilliseconds(750), secondObservedAt);
+        var sink = new RecordingNotificationSink();
+        var tracker = new UsageNotificationTracker(new UsageNotificationPreferences(), sink);
+
+        tracker.Observe(previous, firstObservedAt);
+        tracker.Observe(jittered, secondObservedAt);
+
+        Assert.Empty(sink.Shown);
+    }
+
+    [Fact]
     public void DisabledThresholdPreferenceDoesNotShowNotificationForARealCrossing()
     {
         var firstObservedAt = DateTimeOffset.Parse("2026-08-11T10:00:00Z");
