@@ -25,7 +25,7 @@ Add-AppxPackage -Path .\src\AIUsageDock.Extension\AppPackages\<current-package>\
 
 If this reports an untrusted root, the signer trust setup is incomplete; do not work around it by launching PowerShell with `RunAs` unattended.
 
-Claude usage is queried by the extension with claude -p "/usage" --output-format json; the Claude CLI must be available on the current-user PATH, or configured with AI_USAGE_CLAUDE_PATH. The Dock exposes four stable bands: com.erikbaender.aiusage.codex.session, com.erikbaender.aiusage.codex.weekly, com.erikbaender.aiusage.claude.session, and com.erikbaender.aiusage.claude.weekly.
+Codex and Claude use persistent embedded web sessions by default. Each provider has an independent Web-first/CLI setting. Web-first falls back to the corresponding CLI only when its browser login is unavailable or expired; transient web failures retain stale web data. The CLIs are optional unless selected or needed as an authentication fallback. Configure non-PATH executables with AI_USAGE_CODEX_PATH or AI_USAGE_CLAUDE_PATH. The Dock exposes four stable bands: com.erikbaender.aiusage.codex.session, com.erikbaender.aiusage.codex.weekly, com.erikbaender.aiusage.claude.session, and com.erikbaender.aiusage.claude.weekly.
 
 ## Current verified workflow
 
@@ -42,7 +42,7 @@ Update the resulting MSIX once with Add-AppxPackage. If the installed package ha
 
 Command Palette's Dock has no per-band width setting. Do not write an unsupported DockSize value into its settings; this Command Palette build resets Large back to Default. If the Command Palette UI exposes a larger Dock size in the future, that is a user-level global setting, not an extension setting. After deployment, reload Command Palette; restart Microsoft.CmdPal.UI.exe only if reload does not refresh it.
 
-Claude setup requires no settings-file changes. The provider starts the current-user Claude CLI with a bounded timeout and keeps the last successful snapshot if a later refresh fails.
+Web setup requires no settings-file or token changes. Run **Connect Codex web usage** or **Connect Claude web usage** in Command Palette and authenticate inside the dedicated WebView2 window. A confirmed login closes the window and shows a Windows notification. The provider websites own cookie rotation inside their isolated profiles; the extension never exports cookie values.
 
 ## Signing and UAC
 

@@ -26,7 +26,10 @@ public sealed class UsageCoordinator : IAsyncDisposable
         _claudeSessionDetector = claudeSessionDetector;
         foreach (var provider in _providers.Values)
         {
-            _snapshots[provider.Id] = ProviderSnapshot.Waiting(provider.Id, provider.Id == ProviderId.Claude ? "Claude CLI · claude -p /usage" : "codex app-server", "Waiting for provider data");
+            _snapshots[provider.Id] = ProviderSnapshot.Waiting(
+                provider.Id,
+                provider.Id == ProviderId.Claude ? "Claude web usage" : "Codex web usage",
+                "Waiting for provider data");
             provider.SnapshotChanged += OnProviderSnapshotChanged;
         }
     }
@@ -35,13 +38,20 @@ public sealed class UsageCoordinator : IAsyncDisposable
 
     public static UsageCoordinator CreateDefault(
         UsagePollingPolicy? pollingPolicy = null,
-        IClaudeSessionDetector? claudeSessionDetector = null) => new(
+        IClaudeSessionDetector? claudeSessionDetector = null,
+        IClaudeWebUsageClient? claudeWebUsageClient = null,
+        ICodexWebUsageClient? codexWebUsageClient = null,
+        UsageBackendPreferences? backendPreferences = null)
+    {
+        var preferences = backendPreferences ?? new UsageBackendPreferences();
+        return new(
         [
-            new CodexProvider(),
-            new ClaudeProvider(),
+            new CodexProvider(webClient: codexWebUsageClient, backendPreferences: preferences),
+            new ClaudeProvider(webClient: claudeWebUsageClient, backendPreferences: preferences),
         ],
         pollingPolicy ?? UsagePollingPolicy.Default,
         claudeSessionDetector ?? new ClaudeSessionDetector());
+    }
 
     public UsagePollingPolicy PollingPolicy
     {

@@ -92,6 +92,21 @@ public sealed class UsageJsonTests
     }
 
     [Fact]
+    public void ParsesCodexWebUsageResponse()
+    {
+        var observed = DateTimeOffset.Parse("2026-08-12T10:00:00Z");
+        var snapshot = UsageJson.ParseCodexWebUsage(
+            """{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":37,"reset_at":1786532400,"limit_window_seconds":18000},"secondary_window":{"used_percent":64,"reset_at":1786964400,"limit_window_seconds":604800}}}""",
+            observed);
+
+        Assert.Equal(37, snapshot.GetWindow(UsageWindow.Session)!.UsedPercent);
+        Assert.Equal(64, snapshot.GetWindow(UsageWindow.Weekly)!.UsedPercent);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1786532400), snapshot.GetWindow(UsageWindow.Session)!.ResetsAt);
+        Assert.Equal("Codex web usage", snapshot.Source);
+        Assert.Equal("pro", snapshot.PlanType);
+    }
+
+    [Fact]
     public void ExcessivePayloadIsRejected()
     {
         var payload = "{\"result\":\"" + new string('x', UsageJson.MaxPayloadBytes) + "\"}";

@@ -5,7 +5,14 @@ using AIUsageDock.Core;
 
 namespace AIUsageDock.Providers;
 
-public sealed class CodexAppServerClient : IAsyncDisposable
+public interface ICodexAppServerClient : IAsyncDisposable
+{
+    event EventHandler<JsonElement>? RateLimitsUpdated;
+
+    Task<JsonDocument> ReadRateLimitsAsync(CancellationToken cancellationToken);
+}
+
+public sealed class CodexAppServerClient : ICodexAppServerClient
 {
     private readonly string? _configuredExecutablePath;
     private readonly TimeSpan _requestTimeout;
@@ -221,13 +228,21 @@ public sealed class CodexAppServerClient : IAsyncDisposable
 
 public sealed class CodexProvider : IUsageProvider
 {
-    private readonly CodexAppServerClient _client;
+    private readonly ICodexAppServerClient _client;
+    private readonly ICodexWebUsageClient _webClient;
+    private readonly UsageBackendPreferences _backendPreferences;
     private readonly IClock _clock;
     private ProviderSnapshot? _lastSnapshot;
 
-    public CodexProvider(CodexAppServerClient? client = null, IClock? clock = null)
+    public CodexProvider(
+        ICodexAppServerClient? client = null,
+        IClock? clock = null,
+        ICodexWebUsageClient? webClient = null,
+        UsageBackendPreferences? backendPreferences = null)
     {
         _client = client ?? new CodexAppServerClient();
+        _webClient = webClient ?? new UnconfiguredCodexWebUsageClient();
+        _backendPreferences = backendPreferences ?? new UsageBackendPreferences();
         _clock = clock ?? new SystemClock();
         _client.RateLimitsUpdated += OnRateLimitsUpdated;
     }
@@ -238,20 +253,65 @@ public sealed class CodexProvider : IUsageProvider
 
     public async Task<ProviderSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
     {
+        if (_backendPreferences.Get(Id) == UsageBackendPreference.WebFirst)
+        {
+            if (!_webClient.IsConfigured)
+            {
+                return await ReadCliSnapshotAsync("Codex web session is not connected; using the CLI fallback.", cancellationToken);
+            }
+
+            try
+            {
+                var json = await _webClient.ReadUsageAsync(cancellationToken);
+                var snapshot = UsageJson.ParseCodexWebUsage(json, _clock.UtcNow);
+                _lastSnapshot = snapshot;
+                return Publish(snapshot);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (CodexWebUsageException exception) when (
+                exception.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+            {
+                return await ReadCliSnapshotAsync("Codex web session needs connecting; using the CLI fallback.", cancellationToken);
+            }
+            catch (Exception)
+            {
+                return PublishWebFailure("Codex web refresh failed; the CLI was not used because the web session is still authenticated.");
+            }
+        }
+
+        return await ReadCliSnapshotAsync(null, cancellationToken);
+    }
+
+    private async Task<ProviderSnapshot> ReadCliSnapshotAsync(string? fallbackMessage, CancellationToken cancellationToken)
+    {
         try
         {
             using var response = await _client.ReadRateLimitsAsync(cancellationToken);
             var snapshot = UsageJson.ParseCodexRateLimits(response.RootElement, _clock.UtcNow);
+            if (fallbackMessage is not null)
+            {
+                snapshot = snapshot with { Message = fallbackMessage };
+            }
             _lastSnapshot = snapshot;
-            SnapshotChanged?.Invoke(this, snapshot);
-            return snapshot;
+            return Publish(snapshot);
         }
         catch (FileNotFoundException)
         {
+            if (fallbackMessage is not null)
+            {
+                return PublishAuthenticationFallbackFailure("Codex web session needs connecting and the Codex CLI was not found on PATH.");
+            }
             return Publish(new ProviderSnapshot(Id, ProviderHealth.Unavailable, Array.Empty<UsageWindowSnapshot>(), _lastSnapshot?.LastUpdated, "codex app-server", "Codex CLI not found on PATH."));
         }
         catch (UnauthorizedAccessException)
         {
+            if (fallbackMessage is not null)
+            {
+                return PublishAuthenticationFallbackFailure("Codex web session and Codex CLI both need authentication.");
+            }
             return Publish(new ProviderSnapshot(Id, ProviderHealth.Unauthenticated, Array.Empty<UsageWindowSnapshot>(), _lastSnapshot?.LastUpdated, "codex app-server", "Codex CLI is not authenticated. Run the Codex CLI sign-in flow."));
         }
         catch (Exception exception) when (exception is InvalidOperationException or TimeoutException or OperationCanceledException)
@@ -269,10 +329,16 @@ public sealed class CodexProvider : IUsageProvider
     {
         _client.RateLimitsUpdated -= OnRateLimitsUpdated;
         await _client.DisposeAsync();
+        _webClient.Dispose();
     }
 
     private void OnRateLimitsUpdated(object? sender, JsonElement parameters)
     {
+        if (_backendPreferences.Get(Id) != UsageBackendPreference.Cli)
+        {
+            return;
+        }
+
         try
         {
             var snapshot = UsageJson.ParseCodexRateLimits(parameters, _clock.UtcNow);
@@ -288,6 +354,38 @@ public sealed class CodexProvider : IUsageProvider
     {
         SnapshotChanged?.Invoke(this, snapshot);
         return snapshot;
+    }
+
+    private ProviderSnapshot PublishWebFailure(string message)
+    {
+        if (_lastSnapshot is not null)
+        {
+            return Publish(_lastSnapshot with { Health = ProviderHealth.Stale, Message = message });
+        }
+
+        return Publish(new ProviderSnapshot(Id, ProviderHealth.Error, Array.Empty<UsageWindowSnapshot>(), null, "Codex web usage", message));
+    }
+
+    private ProviderSnapshot PublishAuthenticationFallbackFailure(string message)
+    {
+        if (_lastSnapshot is not null)
+        {
+            return Publish(_lastSnapshot with { Health = ProviderHealth.Stale, Message = message });
+        }
+
+        return Publish(new ProviderSnapshot(Id, ProviderHealth.Unauthenticated, Array.Empty<UsageWindowSnapshot>(), null, "Codex web usage", message));
+    }
+}
+
+internal sealed class UnconfiguredCodexWebUsageClient : ICodexWebUsageClient
+{
+    public bool IsConfigured => false;
+
+    public Task<string> ReadUsageAsync(CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("Codex web usage is not configured.");
+
+    public void Dispose()
+    {
     }
 }
 

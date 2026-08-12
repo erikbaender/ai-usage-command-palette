@@ -9,14 +9,23 @@ public sealed class UsageNotificationService : IDisposable
     private readonly UsageCoordinator _coordinator;
     private readonly UsageNotificationTracker _tracker;
     private readonly WindowsUsageNotificationSink _sink;
+    private readonly IReadOnlyList<IWebUsageSession> _webSessions;
     private bool _disposed;
 
-    public UsageNotificationService(UsageCoordinator coordinator, UsageNotificationPreferences preferences)
+    public UsageNotificationService(
+        UsageCoordinator coordinator,
+        UsageNotificationPreferences preferences,
+        params IWebUsageSession[] webSessions)
     {
         _coordinator = coordinator;
+        _webSessions = webSessions;
         _sink = new WindowsUsageNotificationSink();
         _tracker = new UsageNotificationTracker(preferences, _sink);
         _coordinator.SnapshotChanged += OnSnapshotChanged;
+        foreach (var session in _webSessions)
+        {
+            session.AuthenticationSucceeded += OnAuthenticationSucceeded;
+        }
     }
 
     public void Dispose()
@@ -28,12 +37,23 @@ public sealed class UsageNotificationService : IDisposable
 
         _disposed = true;
         _coordinator.SnapshotChanged -= OnSnapshotChanged;
+        foreach (var session in _webSessions)
+        {
+            session.AuthenticationSucceeded -= OnAuthenticationSucceeded;
+        }
         _sink.Dispose();
     }
 
     private void OnSnapshotChanged(object? sender, ProviderSnapshot current)
     {
         _tracker.Observe(current, DateTimeOffset.UtcNow);
+    }
+
+    private void OnAuthenticationSucceeded(object? sender, WebUsageAuthenticatedEventArgs args)
+    {
+        _sink.TryShow(
+            $"{args.Provider} web usage connected",
+            "The saved browser session will be reused automatically for future usage refreshes.");
     }
 }
 
@@ -66,6 +86,11 @@ internal sealed class WindowsUsageNotificationSink : IUsageNotificationSink, IDi
 
     public bool TryShow(UsageNotificationMessage message)
     {
+        return TryShow(message.Title, message.Body);
+    }
+
+    public bool TryShow(string title, string body)
+    {
         if (!_registered || _manager is null)
         {
             return false;
@@ -74,8 +99,8 @@ internal sealed class WindowsUsageNotificationSink : IUsageNotificationSink, IDi
         try
         {
             var toast = new AppNotificationBuilder()
-                .AddText(message.Title)
-                .AddText(message.Body)
+                .AddText(title)
+                .AddText(body)
                 .BuildNotification();
             _manager.Show(toast);
             return true;

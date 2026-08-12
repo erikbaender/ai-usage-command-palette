@@ -121,6 +121,37 @@ public static class UsageJson
         return new ProviderSnapshot(ProviderId.Codex, ProviderHealth.Available, windows.Values.OrderBy(window => window.Window).ToArray(), observedAt, "codex app-server · account/rateLimits/read", null, planType);
     }
 
+    public static ProviderSnapshot ParseCodexWebUsage(string json, DateTimeOffset observedAt)
+    {
+        using var document = ParseBounded(json);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            throw new JsonException("Codex web usage response is not an object.");
+        }
+
+        var limits = root.TryGetProperty("rate_limit", out var rateLimit) && rateLimit.ValueKind == JsonValueKind.Object
+            ? rateLimit
+            : root;
+        var windows = new Dictionary<UsageWindow, UsageWindowSnapshot>();
+        AddCodexWindow(limits, "primary_window", UsageWindow.Session, observedAt, windows);
+        AddCodexWindow(limits, "secondary_window", UsageWindow.Weekly, observedAt, windows);
+        if (windows.Count == 0)
+        {
+            throw new JsonException("Codex web usage response contained no recognized rate-limit windows.");
+        }
+
+        var planType = FindString(root, "plan_type") ?? FindString(root, "planType");
+        return new ProviderSnapshot(
+            ProviderId.Codex,
+            ProviderHealth.Available,
+            windows.Values.OrderBy(window => window.Window).ToArray(),
+            observedAt,
+            "Codex web usage",
+            null,
+            planType);
+    }
+
     private static DateTimeOffset ParseClaudeCliReset(string value, UsageWindow window, DateTimeOffset observedAt)
     {
         var trimmed = value.Trim();
@@ -246,14 +277,21 @@ public static class UsageJson
             return;
         }
 
-        var duration = ReadNumber(element, "windowDurationMins") ?? ReadNumber(element, "window_duration_mins");
+        var duration = ReadNumber(element, "windowDurationMins") ??
+            ReadNumber(element, "window_duration_mins") ??
+            (ReadNumber(element, "limit_window_seconds") is double seconds ? seconds / 60 : null);
         var inferredWindow = duration switch
         {
             <= 360 when duration is not null => UsageWindow.Session,
             <= 11520 when duration is not null => UsageWindow.Weekly,
             _ => window,
         };
-        var candidate = new UsageWindowSnapshot(inferredWindow, ReadPercentage(element, "usedPercent") ?? ReadPercentage(element, "used_percentage"), ReadTimestamp(element, "resetsAt") ?? ReadTimestamp(element, "resets_at"), observedAt, limitId);
+        var candidate = new UsageWindowSnapshot(
+            inferredWindow,
+            ReadPercentage(element, "usedPercent") ?? ReadPercentage(element, "used_percentage") ?? ReadPercentage(element, "used_percent"),
+            ReadTimestamp(element, "resetsAt") ?? ReadTimestamp(element, "resets_at") ?? ReadTimestamp(element, "reset_at"),
+            observedAt,
+            limitId);
         if (!target.ContainsKey(inferredWindow) || target[inferredWindow].UsedPercent is null)
         {
             target[inferredWindow] = candidate;

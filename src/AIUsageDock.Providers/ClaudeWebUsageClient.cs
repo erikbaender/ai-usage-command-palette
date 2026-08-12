@@ -3,7 +3,14 @@ using System.Net.Http.Headers;
 
 namespace AIUsageDock.Providers;
 
-public sealed class ClaudeWebUsageClient : IDisposable
+public interface IClaudeWebUsageClient : IDisposable
+{
+    bool IsConfigured { get; }
+
+    Task<string> ReadUsageAsync(CancellationToken cancellationToken);
+}
+
+public sealed class ClaudeWebUsageClient : IClaudeWebUsageClient
 {
     private readonly string? _sessionAccessToken;
     private readonly string? _organizationId;

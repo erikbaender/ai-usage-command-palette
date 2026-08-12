@@ -7,7 +7,14 @@ using AIUsageDock.Core;
 
 namespace AIUsageDock.Providers;
 
-public sealed class ClaudeCliClient
+public interface IClaudeCliClient
+{
+    string? LastExecutablePath { get; }
+
+    Task<string> ReadUsageAsync(CancellationToken cancellationToken);
+}
+
+public sealed class ClaudeCliClient : IClaudeCliClient
 {
     private readonly string? _configuredExecutablePath;
     private readonly TimeSpan _requestTimeout;
@@ -194,18 +201,22 @@ public static class ClaudeExecutableResolver
 
 public sealed class ClaudeProvider : IUsageProvider
 {
-    private readonly ClaudeCliClient _client;
-    private readonly ClaudeWebUsageClient _webClient;
+    private readonly IClaudeCliClient _client;
+    private readonly IClaudeWebUsageClient _webClient;
+    private readonly UsageBackendPreferences _backendPreferences;
     private readonly IClock _clock;
     private ProviderSnapshot? _lastSnapshot;
+    private bool _webWasHealthy;
 
     public ClaudeProvider(
-        ClaudeCliClient? client = null,
+        IClaudeCliClient? client = null,
         IClock? clock = null,
-        ClaudeWebUsageClient? webClient = null)
+        IClaudeWebUsageClient? webClient = null,
+        UsageBackendPreferences? backendPreferences = null)
     {
         _client = client ?? new ClaudeCliClient();
         _webClient = webClient ?? new ClaudeWebUsageClient();
+        _backendPreferences = backendPreferences ?? new UsageBackendPreferences();
         _clock = clock ?? new SystemClock();
     }
 
@@ -216,26 +227,47 @@ public sealed class ClaudeProvider : IUsageProvider
     public async Task<ProviderSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
     {
         string? webFallbackMessage = null;
-        if (_webClient.IsConfigured)
+        if (_backendPreferences.Get(Id) == UsageBackendPreference.WebFirst)
         {
+            if (!_webClient.IsConfigured)
+            {
+                webFallbackMessage = "Claude web session is not connected; using the delayed CLI fallback.";
+            }
+
             try
             {
-                var webJson = await _webClient.ReadUsageAsync(cancellationToken);
-                var webSnapshot = ClaudeUsageSnapshotReconciler.Reconcile(
-                    _lastSnapshot,
-                    UsageJson.ParseClaudeWebUsage(webJson, _clock.UtcNow));
-                _lastSnapshot = webSnapshot;
-                SnapshotChanged?.Invoke(this, webSnapshot);
-                return webSnapshot;
+                if (_webClient.IsConfigured)
+                {
+                    var webJson = await _webClient.ReadUsageAsync(cancellationToken);
+                    var webSnapshot = ClaudeUsageSnapshotReconciler.Reconcile(
+                        _lastSnapshot,
+                        UsageJson.ParseClaudeWebUsage(webJson, _clock.UtcNow));
+                    if (!_webWasHealthy)
+                    {
+                        ClaudeDiagnosticLog.Write("web-refresh-success");
+                    }
+                    _webWasHealthy = true;
+                    _lastSnapshot = webSnapshot;
+                    SnapshotChanged?.Invoke(this, webSnapshot);
+                    return webSnapshot;
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
+            catch (ClaudeWebUsageException exception) when (
+                exception.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+            {
+                _webWasHealthy = false;
+                ClaudeDiagnosticLog.Write($"web-refresh-failure error={exception.GetType().Name} message={exception.Message}");
+                webFallbackMessage = "Claude web session needs reconnecting; using the delayed CLI fallback.";
+            }
             catch (Exception exception)
             {
-                ClaudeDiagnosticLog.Write($"web-refresh-failure error={exception.GetType().Name}");
-                webFallbackMessage = "Claude web usage unavailable; using the delayed CLI fallback.";
+                _webWasHealthy = false;
+                ClaudeDiagnosticLog.Write($"web-refresh-failure error={exception.GetType().Name} message={exception.Message}");
+                return PublishWebFailure("Claude web refresh failed; the CLI was not used because the web session is still authenticated.");
             }
         }
 
@@ -257,11 +289,19 @@ public sealed class ClaudeProvider : IUsageProvider
         catch (FileNotFoundException)
         {
             ClaudeDiagnosticLog.Write($"executable-not-found configured={Environment.GetEnvironmentVariable("AI_USAGE_CLAUDE_PATH") ?? "<none>"}");
+            if (webFallbackMessage is not null)
+            {
+                return PublishAuthenticationFallbackFailure("Claude web session needs connecting and the Claude CLI was not found on PATH.");
+            }
             return Publish(new ProviderSnapshot(Id, ProviderHealth.Unavailable, Array.Empty<UsageWindowSnapshot>(), _lastSnapshot?.LastUpdated, "Claude CLI · claude -p /usage", "Claude CLI not found on PATH."));
         }
         catch (UnauthorizedAccessException)
         {
             ClaudeDiagnosticLog.Write($"access-denied executable={_client.LastExecutablePath ?? "<unknown>"}");
+            if (webFallbackMessage is not null)
+            {
+                return PublishAuthenticationFallbackFailure("Claude web session needs connecting and the Claude CLI could not be executed.");
+            }
             return Publish(new ProviderSnapshot(Id, ProviderHealth.Unauthenticated, Array.Empty<UsageWindowSnapshot>(), _lastSnapshot?.LastUpdated, "Claude CLI · claude -p /usage", "Claude CLI could not be executed for the current user."));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -315,6 +355,26 @@ public sealed class ClaudeProvider : IUsageProvider
         }
 
         return Publish(new ProviderSnapshot(Id, ProviderHealth.Error, Array.Empty<UsageWindowSnapshot>(), null, "Claude CLI · claude -p /usage", message));
+    }
+
+    private ProviderSnapshot PublishWebFailure(string message)
+    {
+        if (_lastSnapshot is not null)
+        {
+            return Publish(_lastSnapshot with { Health = ProviderHealth.Stale, Message = message });
+        }
+
+        return Publish(new ProviderSnapshot(Id, ProviderHealth.Error, Array.Empty<UsageWindowSnapshot>(), null, "Claude web usage", message));
+    }
+
+    private ProviderSnapshot PublishAuthenticationFallbackFailure(string message)
+    {
+        if (_lastSnapshot is not null)
+        {
+            return Publish(_lastSnapshot with { Health = ProviderHealth.Stale, Message = message });
+        }
+
+        return Publish(new ProviderSnapshot(Id, ProviderHealth.Unauthenticated, Array.Empty<UsageWindowSnapshot>(), null, "Claude web usage", message));
     }
 
     private ProviderSnapshot Publish(ProviderSnapshot snapshot)

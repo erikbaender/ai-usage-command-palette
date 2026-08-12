@@ -52,14 +52,32 @@ public static class Program
 
     private static async Task RunComServerAsync()
     {
+        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         await using var server = new ComServer();
         using var disposed = new ManualResetEvent(false);
         using var activityMonitor = new ProviderActivityMonitor();
-        await using var coordinator = UsageCoordinator.CreateDefault(claudeSessionDetector: activityMonitor);
+        using var claudeWebSession = new ClaudeWebViewUsageClient();
+        using var codexWebSession = new CodexWebViewUsageClient();
+        var backendPreferences = new AIUsageDock.Providers.UsageBackendPreferences();
+        await using var coordinator = UsageCoordinator.CreateDefault(
+            claudeSessionDetector: activityMonitor,
+            claudeWebUsageClient: claudeWebSession,
+            codexWebUsageClient: codexWebSession,
+            backendPreferences: backendPreferences);
         coordinator.SnapshotChanged += activityMonitor.ObserveSnapshot;
         var notificationPreferences = new UsageNotificationPreferences();
-        using var provider = new AIUsageDockCommandsProvider(coordinator, notificationPreferences, activityMonitor);
-        using var notificationService = new UsageNotificationService(coordinator, notificationPreferences);
+        using var provider = new AIUsageDockCommandsProvider(
+            coordinator,
+            notificationPreferences,
+            backendPreferences,
+            activityMonitor,
+            claudeWebSession,
+            codexWebSession);
+        using var notificationService = new UsageNotificationService(
+            coordinator,
+            notificationPreferences,
+            claudeWebSession,
+            codexWebSession);
         coordinator.Start();
         var extension = new AIUsageDockExtension(disposed, provider);
         server.RegisterClass<AIUsageDockExtension, Microsoft.CommandPalette.Extensions.IExtension>(() => extension);
