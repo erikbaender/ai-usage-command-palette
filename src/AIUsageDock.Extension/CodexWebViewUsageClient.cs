@@ -87,9 +87,7 @@ public sealed class CodexWebViewUsageClient : ICodexWebUsageClient, IWebUsageSes
                         (async () => {
                           const requestId = __REQUEST_ID__;
                           try {
-                            const requestUrl = new URL('https://chatgpt.com/backend-api/wham/usage');
-                            requestUrl.searchParams.set('_ai_usage_refresh', Date.now().toString());
-                            const response = await fetch(requestUrl, {
+                            const sessionResponse = await fetch('https://chatgpt.com/api/auth/session', {
                               cache: 'no-store',
                               credentials: 'include',
                               headers: {
@@ -97,6 +95,26 @@ public sealed class CodexWebViewUsageClient : ICodexWebUsageClient, IWebUsageSes
                                 'Cache-Control': 'no-cache, no-store, max-age=0',
                                 'Pragma': 'no-cache'
                               }
+                            });
+                            const session = sessionResponse.ok ? await sessionResponse.json() : null;
+                            if (!session?.accessToken) {
+                              window.chrome.webview.postMessage({ requestId, status: 401, body: '' });
+                              return;
+                            }
+                            const requestUrl = new URL('https://chatgpt.com/backend-api/wham/usage');
+                            requestUrl.searchParams.set('_ai_usage_refresh', Date.now().toString());
+                            const headers = {
+                              'Accept': 'application/json',
+                              'Authorization': `Bearer ${session.accessToken}`,
+                              'Cache-Control': 'no-cache, no-store, max-age=0',
+                              'Pragma': 'no-cache'
+                            };
+                            const accountId = session.account?.id ?? session.user?.account_id;
+                            if (accountId) headers['ChatGPT-Account-Id'] = accountId;
+                            const response = await fetch(requestUrl, {
+                              cache: 'no-store',
+                              credentials: 'include',
+                              headers
                             });
                             window.chrome.webview.postMessage({
                               requestId,

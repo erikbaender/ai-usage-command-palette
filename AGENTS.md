@@ -63,3 +63,4 @@ PowerToys administrator mode is unrelated to routine extension deployment. It is
 - `Get-AppxPackage -Name Erik.AIUsageDock` reports one installed package.
 - Command Palette has one AI Usage Dock provider and four Dock bands: Codex Session, Codex Weekly, Claude Session, and Claude Weekly.
 Claude diagnostics are written to the packaged app's user-local path: `%LOCALAPPDATA%\Packages\Erik.AIUsageDock_trvxfnfmwyq8y\LocalCache\Local\AIUsage\claude-cli.log`. The log is bounded and redacts common credential/session identifiers.
+Codex web diagnostics are written beside it as `codex-web.log`. The bounded log contains only health, plan, normalized percentages, and reset timestamps; it never records response bodies, access tokens, cookies, or account identifiers.

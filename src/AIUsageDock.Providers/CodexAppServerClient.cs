@@ -264,6 +264,7 @@ public sealed class CodexProvider : IUsageProvider
             {
                 var json = await _webClient.ReadUsageAsync(cancellationToken);
                 var snapshot = UsageJson.ParseCodexWebUsage(json, _clock.UtcNow);
+                CodexDiagnosticLog.WriteSnapshot(snapshot);
                 _lastSnapshot = snapshot;
                 return Publish(snapshot);
             }
@@ -274,10 +275,12 @@ public sealed class CodexProvider : IUsageProvider
             catch (CodexWebUsageException exception) when (
                 exception.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
             {
+                CodexDiagnosticLog.Write($"web-refresh-unauthenticated status={(int)exception.StatusCode}");
                 return await ReadCliSnapshotAsync("Codex web session needs connecting; using the CLI fallback.", cancellationToken);
             }
-            catch (Exception)
+            catch (Exception exception)
             {
+                CodexDiagnosticLog.Write($"web-refresh-failure error={exception.GetType().Name} message={exception.Message}");
                 return PublishWebFailure("Codex web refresh failed; the CLI was not used because the web session is still authenticated.");
             }
         }
@@ -375,6 +378,54 @@ public sealed class CodexProvider : IUsageProvider
 
         return Publish(new ProviderSnapshot(Id, ProviderHealth.Unauthenticated, Array.Empty<UsageWindowSnapshot>(), null, "Codex web usage", message));
     }
+}
+
+internal static class CodexDiagnosticLog
+{
+    private static readonly object Gate = new();
+
+    private static string LogPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "AIUsage",
+        "codex-web.log");
+
+    public static void WriteSnapshot(ProviderSnapshot snapshot)
+    {
+        var session = snapshot.GetWindow(UsageWindow.Session);
+        var weekly = snapshot.GetWindow(UsageWindow.Weekly);
+        Write(
+            $"web-snapshot plan={snapshot.PlanType ?? "<none>"} " +
+            $"sessionUsed={Format(session?.UsedPercent)} sessionReset={Format(session?.ResetsAt)} " +
+            $"weeklyUsed={Format(weekly?.UsedPercent)} weeklyReset={Format(weekly?.ResetsAt)}");
+    }
+
+    public static void Write(string message)
+    {
+        try
+        {
+            lock (Gate)
+            {
+                var directory = Path.GetDirectoryName(LogPath)!;
+                Directory.CreateDirectory(directory);
+                if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 128 * 1024)
+                {
+                    File.WriteAllText(LogPath, string.Empty);
+                }
+
+                File.AppendAllText(LogPath, $"{DateTimeOffset.UtcNow:O} {message}{Environment.NewLine}");
+            }
+        }
+        catch
+        {
+            // Diagnostics must never affect usage refresh.
+        }
+    }
+
+    private static string Format(double? value) =>
+        value?.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) ?? "<none>";
+
+    private static string Format(DateTimeOffset? value) =>
+        value?.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture) ?? "<none>";
 }
 
 internal sealed class UnconfiguredCodexWebUsageClient : ICodexWebUsageClient

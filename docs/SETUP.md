@@ -58,6 +58,8 @@ After installing the extension, reload Command Palette. No Claude settings chang
 
 Ensure the PATH visible to PowerToys contains claude.exe. Set AI_USAGE_CLAUDE_PATH to the full executable path if necessary. Diagnostics are written to the package-local AIUsage\claude-cli.log file.
 
+Sanitized Codex web diagnostics are written to the package-local AIUsage\codex-web.log file. It contains normalized usage fields and errors only, never access tokens, cookies, response bodies, or account identifiers.
+
 For arbitrary shell pipelines, keep the original command explicit through a script or powershell -NoProfile -File ...; direct executable-and-argument commands are launched without a shell.
 
 ## Troubleshooting
