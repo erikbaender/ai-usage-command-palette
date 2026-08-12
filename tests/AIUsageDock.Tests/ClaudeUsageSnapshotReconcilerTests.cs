@@ -32,6 +32,34 @@ public sealed class ClaudeUsageSnapshotReconcilerTests
         Assert.Null(reconciled.GetWindow(UsageWindow.Session)!.ResetsAt);
     }
 
+    [Theory]
+    [InlineData(71, 70)]
+    [InlineData(71, 20)]
+    public void AcceptsNonZeroProviderCorrectionsBeforeReset(double previousUsed, double correctedUsed)
+    {
+        var observed = DateTimeOffset.Parse("2026-08-11T20:00:00Z");
+        var reset = observed.AddHours(4);
+        var previous = Snapshot(previousUsed, reset, observed);
+        var current = Snapshot(correctedUsed, reset, observed.AddSeconds(3));
+
+        var reconciled = ClaudeUsageSnapshotReconciler.Reconcile(previous, current);
+
+        Assert.Equal(correctedUsed, reconciled.GetWindow(UsageWindow.Session)!.UsedPercent);
+        Assert.Equal(current.GetWindow(UsageWindow.Session)!.ObservedAt, reconciled.GetWindow(UsageWindow.Session)!.ObservedAt);
+    }
+
+    [Fact]
+    public void AcceptsZeroWhenThereIsNoKnownFutureResetBoundary()
+    {
+        var observed = DateTimeOffset.Parse("2026-08-11T20:00:00Z");
+        var previous = Snapshot(40, null, observed);
+        var current = Snapshot(0, null, observed.AddSeconds(3));
+
+        var reconciled = ClaudeUsageSnapshotReconciler.Reconcile(previous, current);
+
+        Assert.Equal(0, reconciled.GetWindow(UsageWindow.Session)!.UsedPercent);
+    }
+
     private static ProviderSnapshot Snapshot(
         double used,
         DateTimeOffset? reset,

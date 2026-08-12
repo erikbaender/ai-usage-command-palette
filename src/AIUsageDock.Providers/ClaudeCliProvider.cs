@@ -431,15 +431,14 @@ public static class ClaudeUsageSnapshotReconciler
             return current;
         }
 
-        // Claude can briefly return an empty/new-session value while usage is
-        // still being aggregated. A decrease is valid only after the reset
-        // boundary of the prior window has actually passed.
-        if (previous.ResetsAt is DateTimeOffset previousReset &&
-            previousReset <= current.ObservedAt)
-        {
-            return current;
-        }
-
-        return previous;
+        // A zero before the known reset boundary can be Claude's temporary
+        // empty/new-session response while usage is still being aggregated.
+        // Non-zero decreases are legitimate provider corrections and must be
+        // reflected immediately, regardless of their size.
+        var isSuspiciousPrematureZero = previousUsed > 0 &&
+            currentUsed == 0 &&
+            previous.ResetsAt is DateTimeOffset previousReset &&
+            previousReset > current.ObservedAt;
+        return isSuspiciousPrematureZero ? previous : current;
     }
 }
