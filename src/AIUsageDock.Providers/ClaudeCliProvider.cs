@@ -164,7 +164,10 @@ internal static class ClaudeDiagnosticLog
     private static string Sanitize(string value)
     {
         var singleLine = Regex.Replace(value, @"\s+", " ").Trim();
-        singleLine = Regex.Replace(singleLine, @"(?i)(authorization|token|api[_-]?key|cookie|session[_-]?id|uuid)\s*[:=]\s*\S+", "$1=<redacted>");
+        singleLine = Regex.Replace(
+            singleLine,
+            @"(?i)([""']?(?:authorization|token|api[_-]?key|cookie|session[_-]?id|uuid)[""']?\s*[:=]\s*)[""']?[^""',;\s}\]]+[""']?",
+            "$1<redacted>");
         return singleLine.Length > 2000 ? singleLine[..2000] : singleLine;
     }
 }
@@ -239,9 +242,11 @@ public sealed class ClaudeProvider : IUsageProvider
                 if (_webClient.IsConfigured)
                 {
                     var webJson = await _webClient.ReadUsageAsync(cancellationToken);
+                    var parsedWebSnapshot = UsageJson.ParseClaudeWebUsage(webJson, _clock.UtcNow);
                     var webSnapshot = ClaudeUsageSnapshotReconciler.Reconcile(
                         _lastSnapshot,
-                        UsageJson.ParseClaudeWebUsage(webJson, _clock.UtcNow));
+                        parsedWebSnapshot);
+                    LogWebSnapshot(parsedWebSnapshot, webSnapshot);
                     if (!_webWasHealthy)
                     {
                         ClaudeDiagnosticLog.Write("web-refresh-success");
@@ -382,6 +387,23 @@ public sealed class ClaudeProvider : IUsageProvider
         SnapshotChanged?.Invoke(this, snapshot);
         return snapshot;
     }
+
+    private static void LogWebSnapshot(ProviderSnapshot received, ProviderSnapshot accepted)
+    {
+        var receivedSession = received.GetWindow(UsageWindow.Session);
+        var acceptedSession = accepted.GetWindow(UsageWindow.Session);
+        ClaudeDiagnosticLog.Write(
+            $"web-snapshot receivedUsed={FormatDiagnosticValue(receivedSession?.UsedPercent)} " +
+            $"receivedReset={FormatDiagnosticValue(receivedSession?.ResetsAt)} " +
+            $"acceptedUsed={FormatDiagnosticValue(acceptedSession?.UsedPercent)} " +
+            $"acceptedReset={FormatDiagnosticValue(acceptedSession?.ResetsAt)}");
+    }
+
+    private static string FormatDiagnosticValue(double? value) =>
+        value?.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) ?? "<none>";
+
+    private static string FormatDiagnosticValue(DateTimeOffset? value) =>
+        value?.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture) ?? "<none>";
 }
 
 public static class ClaudeUsageSnapshotReconciler

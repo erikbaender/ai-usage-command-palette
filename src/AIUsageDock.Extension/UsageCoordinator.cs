@@ -13,7 +13,7 @@ public sealed class UsageCoordinator : IAsyncDisposable
     private readonly SemaphoreSlim _scheduleChanged = new(0, 1);
     private readonly object _gate = new();
     private UsagePollingPolicy _pollingPolicy;
-    private Task? _refreshLoop;
+    private Task? _refreshLoops;
     private bool _disposed;
 
     private UsageCoordinator(
@@ -91,7 +91,8 @@ public sealed class UsageCoordinator : IAsyncDisposable
 
     public void Start()
     {
-        _refreshLoop ??= RefreshLoopAsync(_shutdown.Token);
+        _refreshLoops ??= Task.WhenAll(_providers.Values.Select(provider =>
+            RefreshProviderLoopAsync(provider.Id, _shutdown.Token)));
     }
 
     public async Task RefreshAsync(CancellationToken cancellationToken)
@@ -116,9 +117,9 @@ public sealed class UsageCoordinator : IAsyncDisposable
 
         _disposed = true;
         _shutdown.Cancel();
-        if (_refreshLoop is not null)
+        if (_refreshLoops is not null)
         {
-            try { await _refreshLoop; } catch (OperationCanceledException) { }
+            try { await _refreshLoops; } catch (OperationCanceledException) { }
         }
 
         foreach (var provider in _providers.Values)
@@ -131,19 +132,25 @@ public sealed class UsageCoordinator : IAsyncDisposable
         _shutdown.Dispose();
     }
 
-    private async Task RefreshLoopAsync(CancellationToken cancellationToken)
+    private async Task RefreshProviderLoopAsync(
+        ProviderId providerId,
+        CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
-                await RefreshAsync(cancellationToken);
-                var sessionRunning = _claudeSessionDetector.IsSessionRunning() ||
+                await RefreshProviderAsync(providerId, cancellationToken);
+                var sessionRunning = providerId == ProviderId.Claude &&
+                    (_claudeSessionDetector.IsSessionRunning() ||
                     UsageSessionActivity.IsClaudeSessionActive(
                         GetSnapshot(ProviderId.Claude),
-                        DateTimeOffset.UtcNow);
+                        DateTimeOffset.UtcNow));
                 var interval = PollingPolicy.GetInterval(sessionRunning);
-                await WaitForNextRefreshAsync(interval, watchForSessionStart: !sessionRunning, cancellationToken);
+                await WaitForNextRefreshAsync(
+                    interval,
+                    watchForSessionStart: providerId == ProviderId.Claude && !sessionRunning,
+                    cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

@@ -87,9 +87,16 @@ public sealed class CodexWebViewUsageClient : ICodexWebUsageClient, IWebUsageSes
                         (async () => {
                           const requestId = __REQUEST_ID__;
                           try {
-                            const response = await fetch('https://chatgpt.com/backend-api/wham/usage', {
+                            const requestUrl = new URL('https://chatgpt.com/backend-api/wham/usage');
+                            requestUrl.searchParams.set('_ai_usage_refresh', Date.now().toString());
+                            const response = await fetch(requestUrl, {
                               cache: 'no-store',
-                              credentials: 'include'
+                              credentials: 'include',
+                              headers: {
+                                'Accept': 'application/json',
+                                'Cache-Control': 'no-cache, no-store, max-age=0',
+                                'Pragma': 'no-cache'
+                              }
                             });
                             window.chrome.webview.postMessage({
                               requestId,
@@ -319,7 +326,8 @@ public sealed class CodexWebViewUsageClient : ICodexWebUsageClient, IWebUsageSes
     {
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
         var webView = _webView;
-        if (webView is null || webView.IsDisposed)
+        var window = _window;
+        if (webView is null || webView.IsDisposed || window is null || window.IsDisposed)
         {
             completion.TrySetException(new InvalidOperationException("Codex web session is unavailable."));
             return completion.Task;
@@ -328,7 +336,7 @@ public sealed class CodexWebViewUsageClient : ICodexWebUsageClient, IWebUsageSes
         var registration = cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken));
         try
         {
-            webView.BeginInvoke(async () =>
+            window.BeginInvoke(async () =>
             {
                 try
                 {

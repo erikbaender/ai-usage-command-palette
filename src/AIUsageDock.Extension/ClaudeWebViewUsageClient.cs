@@ -89,16 +89,50 @@ public sealed class ClaudeWebViewUsageClient : IClaudeWebUsageClient, IWebUsageS
                         """
                         (async () => {
                           const requestId = __REQUEST_ID__;
-                          const usageUrl = __USAGE_ENDPOINT__ ?? performance.getEntriesByType('resource')
+                          let usageUrl = __USAGE_ENDPOINT__ ?? performance.getEntriesByType('resource')
                             .map(entry => entry.name)
                             .find(url => /\/api\/organizations\/[^/]+\/usage$/.test(url));
                           if (!usageUrl) {
-                            if (location.hash !== '#settings/usage') location.hash = 'settings/usage';
-                            window.chrome.webview.postMessage({ requestId, status: 425, body: '', usageUrl: null });
-                            return;
+                            const organizationsResponse = await fetch('/api/organizations', {
+                              cache: 'no-store',
+                              credentials: 'include',
+                              headers: {
+                                'Accept': 'application/json',
+                                'Cache-Control': 'no-cache, no-store, max-age=0',
+                                'Pragma': 'no-cache'
+                              }
+                            });
+                            if (!organizationsResponse.ok) {
+                              window.chrome.webview.postMessage({
+                                requestId,
+                                status: organizationsResponse.status,
+                                body: '',
+                                usageUrl: null
+                              });
+                              return;
+                            }
+                            const organizations = await organizationsResponse.json();
+                            const organization = organizations.find(candidate =>
+                              Array.isArray(candidate.capabilities) && candidate.capabilities.includes('claude_pro')) ??
+                              organizations.find(candidate => candidate.uuid);
+                            if (!organization?.uuid) {
+                              window.chrome.webview.postMessage({ requestId, status: 425, body: '', usageUrl: null });
+                              return;
+                            }
+                            usageUrl = new URL(`/api/organizations/${organization.uuid}/usage`, location.origin).href;
                           }
                           try {
-                            const response = await fetch(usageUrl, { cache: 'no-store' });
+                            const requestUrl = new URL(usageUrl);
+                            requestUrl.searchParams.set('_ai_usage_refresh', Date.now().toString());
+                            const response = await fetch(requestUrl, {
+                              cache: 'no-store',
+                              credentials: 'include',
+                              headers: {
+                                'Accept': 'application/json',
+                                'Cache-Control': 'no-cache, no-store, max-age=0',
+                                'Pragma': 'no-cache'
+                              }
+                            });
                             window.chrome.webview.postMessage({
                               requestId,
                               status: response.status,
@@ -344,7 +378,8 @@ public sealed class ClaudeWebViewUsageClient : IClaudeWebUsageClient, IWebUsageS
     {
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
         var webView = _webView;
-        if (webView is null || webView.IsDisposed)
+        var window = _window;
+        if (webView is null || webView.IsDisposed || window is null || window.IsDisposed)
         {
             completion.TrySetException(new InvalidOperationException("Claude web session is unavailable."));
             return completion.Task;
@@ -353,7 +388,7 @@ public sealed class ClaudeWebViewUsageClient : IClaudeWebUsageClient, IWebUsageS
         var registration = cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken));
         try
         {
-            webView.BeginInvoke(async () =>
+            window.BeginInvoke(async () =>
             {
                 try
                 {
