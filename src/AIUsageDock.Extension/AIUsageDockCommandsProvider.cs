@@ -33,7 +33,7 @@ public sealed partial class AIUsageDockCommandsProvider : CommandProvider, IDisp
         _backendPreferences = backendPreferences;
         _claudeWebSession = claudeWebSession;
         _codexWebSession = codexWebSession;
-        _settingsPage = new UsageSettingsPage(coordinator);
+        _settingsPage = new UsageSettingsPage(coordinator, activityMonitor);
         _settings = _settingsPage.ExtensionSettings;
         Settings = _settings;
         DisplayName = "AI Usage Dock";

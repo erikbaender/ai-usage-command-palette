@@ -11,7 +11,7 @@ public sealed class ProviderActivityMonitor : IProviderActivityDetector, IDispos
     private readonly object _gate = new();
     private readonly TimeSpan _halfPeriod;
     private readonly Task _monitorTask;
-    private readonly ProviderUsageActivityTracker _usageActivityTracker = new(TimeSpan.FromSeconds(5));
+    private readonly ProviderUsageActivityTracker _usageActivityTracker = new();
     private bool _disposed;
 
     public ProviderActivityMonitor(TimeSpan? blinkPeriod = null)
@@ -46,6 +46,14 @@ public sealed class ProviderActivityMonitor : IProviderActivityDetector, IDispos
         lock (_gate)
         {
             return _usageActivityTracker.IsActive(provider, DateTimeOffset.UtcNow);
+        }
+    }
+
+    public void UpdateBlinkExpiration(TimeSpan expiration)
+    {
+        lock (_gate)
+        {
+            _usageActivityTracker.UpdateActiveHoldDuration(expiration);
         }
     }
 

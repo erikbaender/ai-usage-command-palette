@@ -5,6 +5,41 @@ namespace AIUsageDock.Tests;
 public sealed class ProviderActivityTests
 {
     [Fact]
+    public void DefaultsToOneMinuteExpiration()
+    {
+        var tracker = new ProviderUsageActivityTracker();
+        var observed = DateTimeOffset.Parse("2026-08-11T20:00:00Z");
+
+        tracker.Observe(Snapshot(ProviderId.Claude, 10, observed), observed);
+        tracker.Observe(Snapshot(ProviderId.Claude, 11, observed.AddSeconds(1)), observed.AddSeconds(1));
+
+        Assert.Equal(TimeSpan.FromMinutes(1), tracker.ActiveHoldDuration);
+        Assert.True(tracker.IsActive(ProviderId.Claude, observed.AddSeconds(60)));
+        Assert.False(tracker.IsActive(ProviderId.Claude, observed.AddSeconds(61)));
+    }
+
+    [Fact]
+    public void UpdatedExpirationAppliesToCurrentActivity()
+    {
+        var tracker = new ProviderUsageActivityTracker(TimeSpan.FromMinutes(1));
+        var observed = DateTimeOffset.Parse("2026-08-11T20:00:00Z");
+
+        tracker.Observe(Snapshot(ProviderId.Codex, 20, observed), observed);
+        tracker.Observe(Snapshot(ProviderId.Codex, 21, observed.AddSeconds(1)), observed.AddSeconds(1));
+        tracker.UpdateActiveHoldDuration(TimeSpan.FromSeconds(5));
+
+        Assert.False(tracker.IsActive(ProviderId.Codex, observed.AddSeconds(6)));
+    }
+
+    [Fact]
+    public void RejectsNonPositiveExpirationUpdates()
+    {
+        var tracker = new ProviderUsageActivityTracker();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => tracker.UpdateActiveHoldDuration(TimeSpan.Zero));
+    }
+
+    [Fact]
     public void UsageIncreaseActivityExpiresAfterShortHold()
     {
         var tracker = new ProviderUsageActivityTracker(TimeSpan.FromSeconds(5));

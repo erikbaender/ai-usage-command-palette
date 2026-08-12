@@ -11,7 +11,7 @@ It includes:
 - Per-provider backend settings: Web-first (default) or CLI.
 - Web-first falls back to the corresponding CLI only when the browser session is not authenticated; transient web failures keep the last web snapshot instead of mixing in delayed CLI data.
 - One-second delay between usage reads while provider usage is actively changing.
-- Provider icons blink between full and half opacity on a one-second cycle while recent usage snapshots show that metered usage is increasing.
+- Provider icons blink between full and half opacity after usage snapshots show that metered usage increased; the expiration is configurable and defaults to one minute.
 
 ## MVP
 
